@@ -1,0 +1,1108 @@
+---
+title: "Almond Prices, Production, and California Weather (1980 to 2021)"
+author: "Joe Mallonee (jwmallon@mtu.edu), Doni Obidov (dobidov@mtu.edu)"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+alpha <- 0.05
+
+# Set up #######################################################################
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+options(tinytex.verbose = TRUE)
+
+packages <- c("dplyr", "extrafont", "forecast", "grDevices", "lmtest",
+              "lubridate", "MASS", "sandwich", "tinytex", "TSA", "tseries")
+for (package in packages) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package)
+  }
+}
+
+library(dplyr)
+library(extrafont)
+library(forecast)
+library(grDevices)
+library(lmtest)
+library(lubridate)
+library(MASS)
+library(sandwich)
+library(tinytex)
+library(TSA)
+library(tseries)
+
+# Helper functions #############################################################
+# Keep track of assumptions, hypothesis test results/p-values, etc.
+add_assumption <- function(assumption_matrix, data_name,
+                           method, p_value, conclusion, other = "") {
+  new_row <- data.frame(
+    data.name = data_name,
+    method = method,
+    p.value = p_value,
+    conclusion = conclusion,
+    other = other,
+    stringsAsFactors = FALSE)
+  
+  assumption_matrix <- rbind(assumption_matrix, new_row)
+}
+
+series_unit_root_tests <- function(series, assumptions_record) {
+  data.name_ <- toString(substitute(series))
+  
+  adf_ <- adf.test(series)
+  h0 <- "H_0: non-stationary"; hA <- "H_A: stationary"
+  assumptions_record <- add_assumption(assumptions_record,
+                                       data.name_,
+                                       adf_$method,
+                                       adf_$p.value,
+                                       ifelse(adf_$p.value > alpha, h0, hA))
+  pp_ <- pp.test(series)
+  h0 <- "H_0: non-stationary"; hA <- "H_A: stationary"
+  assumptions_record <- add_assumption(assumptions_record,
+                                       data.name_,
+                                       pp_$method,
+                                       pp_$p.value,
+                                       ifelse(pp_$p.value > alpha, h0, hA))
+  kpss_ <- kpss.test(series)
+  h0 <- "H_0: stationary"; hA <- "H_A: non-stationary"
+  assumptions_record <- add_assumption(assumptions_record,
+                                       data.name_,
+                                       kpss_$method,
+                                       kpss_$p.value,
+                                       ifelse(kpss_$p.value > alpha, h0, hA))
+}
+
+resids_independence_tests <- function(series, assumptions_record) {
+  data.name_ <- toString(substitute(series))
+  
+  series_lm_ <- lm(series ~ time(series))
+  resids_lm_ <- rstandard(series_lm_)
+  
+  runs_ <- runs(resids_lm_)
+  h0 <- "H_0: independent"; hA <- "H_A: dependent"
+  assumptions_record <- add_assumption(assumptions_record,
+                                       paste("std residuals,", data.name_),
+                                       "Runs Test",
+                                       runs_$pvalue,
+                                       ifelse(runs_$pvalue > alpha, h0, hA))
+
+  acf_ <- acf(resids_lm_)$acf
+  lags_ <- "Excessive lag(s): "
+  for (lag in 1:length(acf_)) {
+    if (abs(acf_[lag]) > 1.96/sqrt(length(series))) {
+      lags_ <- paste(lags_, toString(lag))
+    }
+  }
+  assumptions_record <- add_assumption(assumptions_record,
+                                       paste("std residuals,", data.name_),
+                                       "ACF Plot",
+                                       "n/a",
+                                       lags_)
+}
+
+resids_normality_tests <- function(series, assumptions_record) {
+  data.name_ <- toString(substitute(series))
+  
+  series_lm_ <- lm(series ~ time(series))
+  resids_lm_ <- rstandard(series_lm_)
+  
+  par(mfrow = c(1, 2))
+  qqnorm(resids_lm_)
+  qqline(resids_lm_)
+  hist(resids_lm_)
+  print(shapiro.test(resids_lm_))
+  
+  sw_ <- shapiro.test(resids_lm_)
+  h0 <- "H_0: normally distributed"; hA <- "H_A: not normally distributed"
+  assumptions_record <- add_assumption(assumptions_record,
+                                       paste("std residuals,", data.name_),
+                                       sw_$method,
+                                       sw_$p.value,
+                                       ifelse(sw_$p.value > alpha, h0, hA))
+}
+```
+
+```{r}
+# Create assumption matrices
+assumptions_price <- data.frame(
+  data.name = character(),
+  method = character(),
+  p.value = numeric(),
+  conclusion = character(),
+  stringsAsFactors = FALSE
+)
+
+assumptions_production <- data.frame(
+  data.name = character(),
+  method = character(),
+  p.value = numeric(),
+  conclusion = character(),
+  stringsAsFactors = FALSE
+)
+
+assumptions_humidity <- data.frame(
+  data.name = character(),
+  method = character(),
+  p.value = numeric(),
+  conclusion = character(),
+  stringsAsFactors = FALSE
+)
+
+assumptions_temperature <- data.frame(
+  data.name = character(),
+  method = character(),
+  p.value = numeric(),
+  conclusion = character(),
+  stringsAsFactors = FALSE
+)
+
+assumptions_windspeed <- data.frame(
+  data.name = character(),
+  method = character(),
+  p.value = numeric(),
+  conclusion = character(),
+  stringsAsFactors = FALSE
+)
+```
+
+
+
+
+
+\newpage
+General Questions, illustrated through the "straight-forward/common-sense" belief that "weather SHOULD impact crop yield." Here, we explore almond production in California (geographic concentration makes such an analysis possible—compare to commodities such as maize, rice, wheat which are grown all over the world).
+
+General Questions:
+1) Do additional features [assuming relevant to response] (weather points...) lead to more parsimonious models?
+2) Do additional features (weather points...) *consistently* improve information criteria?
+
+
+
+
+
+# 0. Load and format data
+
+```{r}
+weather <- read.csv("local/data/weather_daily.csv")
+almonds <- read.csv("local/data/almonds_yearly.csv")
+
+weather[weather == 0] <- NA
+
+# Convert relevant columns to time series objects
+production <- ts(almonds$Production, start = c(1980), end = c(2021), frequency = 1)
+price <- ts(almonds$GrowerPrice, start = c(1980), end = c(2021), frequency = 1)
+temperature <- ts(weather$HourlyDryBulbTemperature, start = c(1980), end = c(2021), frequency = 365)
+humidity <- ts(weather$HourlyRelativeHumidity, start = c(1980), end = c(2021), frequency = 365)
+windspeed <- ts(weather$HourlyWindSpeed, start = c(1980), end = c(2021), frequency = 365)
+
+# Aggregate weather to yearly cadence
+weather_agg <- weather %>%
+  mutate(Date = as.Date(DATE, format = "%Y-%m-%d")) %>%
+  group_by(Year = year(Date)) %>%
+  summarize(MeanTemperature = mean(HourlyDryBulbTemperature, na.rm = TRUE),
+            MeanHumidity = mean(HourlyRelativeHumidity, na.rm = TRUE),
+            MeanWindSpeed = mean(HourlyWindSpeed, na.rm = TRUE))
+
+temperature_agg <- ts(weather_agg$MeanTemperature, start = c(1980), end = c(2021), frequency = 1)
+humidity_agg <- ts(weather_agg$MeanHumidity, start = c(1980), end = c(2021), frequency = 1)
+windspeed_agg <- ts(weather_agg$MeanWindSpeed, start = c(1980), end = c(2021), frequency = 1)
+
+par(mfrow = c(2, 3))
+plot(humidity_agg)
+plot(temperature_agg)
+plot(windspeed_agg)
+plot(price)
+plot(production)
+```
+
+
+
+
+
+# Analysis for Price
+## 1. Plot, examine, and correct the as-is data for `price`
+
+```{r}
+# Plot data
+price_lm <- lm(price ~ time(price))
+plot(price)
+abline(price_lm$coefficients)
+```
+
+### 1a, 1b. Examine deterministic and stochastic trends for `price`
+
+```{r, paged.print=FALSE}
+# Explore deterministic trends and apply data transformations as needed
+acf(price)
+assumptions_price <- series_unit_root_tests(price, assumptions_price)
+assumptions_price <- series_unit_root_tests(log(price), assumptions_price)
+
+# Explore stochastic trends and apply data transformations as needed
+assumptions_price <- series_unit_root_tests(diff(price), assumptions_price)
+assumptions_price <- series_unit_root_tests(diff(log(price)), assumptions_price)
+
+assumptions_price
+```
+
+## 2. Analyze standardized residuals for detrended `price` (`diff log price`)
+### 2a. Conduct independence tests for `diff log price`
+### 2b. Check for zero-mean and homoscedasticity for detrended `diff log price`
+### 2c. Check normality for `diff log price`
+
+```{r}
+# 2a. If independent, then you can skip the rest. If fails, may need HAC
+assumptions_price <- resids_independence_tests(diff(log(price)), assumptions_price)
+
+# 2b. Zero mean, homoscedasticity assumptions via standardized residual plots
+detrend_price_lm <- lm(diff(log(price)) ~ time(diff(log(price))))
+plot(rstandard(detrend_price_lm), ylim=c(-4,4))
+abline(h=+3, col="red")
+abline(h=0)
+abline(h=-3, col="red")
+
+# 2c. Approximately normal
+assumptions_price <- resids_normality_tests(diff(log(price)), assumptions_price)
+```
+
+```{r, paged.print=FALSE}
+# Output assumption checks summary
+assumptions_price
+```
+
+## 3. Determine order of appropriate ARIMA(p,d,q) model for `diff log price`
+### 3a. Check ACF, PACF, and EACF plots for `diff log price`
+### 3b. Estimate candidate models for `diff log price`
+### 3c. Choose the most reasonable model for `diff log price`
+
+```{r}
+# 3a. Create sample ACF, PACF, EACF plots to determine candidate pairs of (p,q)
+acf(diff(log(price)))
+pacf(diff(log(price)))
+# eacf(diff(log(price)))
+
+# 3b. Estimate the candidate models using MLE
+plot(armasubsets(y = diff(log(price)), nar = 10, nma = 10, ar.method = "ols"))
+# auto.arima(diff(log(price)))
+
+# 3c. Select model with smallest value of relevant Information Criteria (BIC)
+price_0.0.0 <- arima(diff(log(price)), order=c(0,0,0)) # Base case
+price_9.0.7 <- arima(diff(log(price)), order=c(9,0,7))
+price_9.0.9 <- arima(diff(log(price)), order=c(9,0,9))
+price_6.0.10 <- arima(diff(log(price)), order=c(6,0,10))
+BIC(price_0.0.0)
+BIC(price_9.0.7) # Winner
+BIC(price_9.0.9)
+BIC(price_6.0.10)
+```
+
+## 4. Conduct parameter estimation for `diff log price`
+
+```{r}
+# Not relevant to us at this point in the analysis, comes with later regression
+```
+
+## 5. Conduct model diagnostics for `diff log price`
+### 5a. Conduct residual analysis for `diff log price`
+
+```{r}
+# 5a. Perform residual analysis on the estimated error process
+# Independence
+assumptions_price <- resids_independence_tests(rstandard(price_9.0.7), assumptions_price)
+
+# Zero-mean, homoscedasticity
+plot(x=rstandard(price_9.0.7), ylim=c(-4,4))
+abline(h=+3, col="red")
+abline(h=0)
+abline(h=-3, col="red")
+
+# Normality
+assumptions_price <- resids_normality_tests(rstandard(price_9.0.7), assumptions_price)
+
+# General residual test for chosen model
+tsdiag(price_9.0.7)
+```
+
+### 5b. Verify candidate model selection by overfitting for `diff log price`
+
+```{r}
+# Check if the additional AR(p) and MA(q) parameters are significant or not
+price_1.0.0 <- arima(diff(log(price)), order=c(1,0,0)) # ar1 insignificant
+price_0.0.1 <- arima(diff(log(price)), order=c(0,0,1)) # ma1 insignificant
+price_10.0.7 <- arima(diff(log(price)), order=c(10,0,7)) # ar10 insignificant
+price_9.0.8 <- arima(diff(log(price)), order=c(9,0,8)) # ma8  insignificant
+```
+
+### 6. Try xreg for other factors...
+
+```{r}
+# Function to generate xreg matrices
+create_xreg_matrix <- function(h, t, w, include) {
+  xreg <- cbind(
+    if (include[1]) diff(h),
+    if (include[2]) diff(t),
+    if (include[3]) diff(w)
+  )
+  return(xreg)
+}
+
+# Define variables
+variables <- list(
+  h = humidity_agg,
+  t = temperature_agg,
+  w = windspeed_agg
+)
+
+# Generate all possible combinations of the variables
+variable_combinations <- lapply(variables, function(x) c(TRUE, FALSE))
+variable_combinations <- expand.grid(variable_combinations)
+
+# Fit ARIMA models and calculate BIC for each model
+models <- list()
+model_bic <- c()
+
+for (i in 1:nrow(variable_combinations)) {
+  include <- as.logical(variable_combinations[i,])
+  xreg <- create_xreg_matrix(variables$h, variables$t, variables$w, include)
+  
+  model_name <- paste0("price_0.0.0_", paste(names(variables)[include], collapse="."))
+  
+  if (all(!include)) {
+    model <- arima(diff(log(price)), order = c(0, 0, 0))
+  } else {
+    model <- arima(diff(log(price)), order = c(0, 0, 0), xreg = xreg)
+  }
+  
+  models[[model_name]] <- model
+  model_bic[model_name] <- BIC(model)
+}
+
+for (i in 1:nrow(variable_combinations)) {
+  include <- as.logical(variable_combinations[i,])
+  xreg <- create_xreg_matrix(variables$h, variables$t, variables$w, include)
+  
+  model_name <- paste0("price_9.0.7_", paste(names(variables)[include], collapse="."))
+  
+  if (all(!include)) {
+    model <- arima(diff(log(price)), order = c(9, 0, 7))
+  } else {
+    model <- arima(diff(log(price)), order = c(9, 0, 7), xreg = xreg)
+  }
+  
+  models[[model_name]] <- model
+  model_bic[model_name] <- BIC(model)
+}
+
+print(model_bic)
+```
+
+
+
+
+
+# Analysis for Production
+## 1. Plot, examine, and correct the as-is data for `production`
+
+```{r}
+# Plot data
+production_lm <- lm(production ~ time(production))
+plot(production)
+abline(production_lm$coefficients)
+```
+
+### 1a, 1b. Examine deterministic and stochastic trends for `production`
+
+```{r, paged.print=FALSE}
+# Explore deterministic trends and apply data transformations as needed
+acf(production)
+assumptions_production <- series_unit_root_tests(production, assumptions_production)
+assumptions_production <- series_unit_root_tests(log(production), assumptions_production)
+
+# Explore stochastic trends and apply data transformations as needed
+assumptions_production <- series_unit_root_tests(diff(production), assumptions_production)
+assumptions_production <- series_unit_root_tests(diff(log(production)), assumptions_production)
+
+assumptions_production
+```
+
+## 2. Analyze standardized residuals for detrended `production` (`diff production`)
+### 2a. Conduct independence tests for `diff production`
+### 2b. Check for zero-mean and homoscedasticity for detrended `diff production`
+### 2c. Check normality for `diff production`
+
+```{r}
+# 2a. If independent, then you can skip the rest. If fails, may need HAC
+assumptions_production <- resids_independence_tests(diff(production), assumptions_production)
+
+# 2b. Zero mean, homoscedasticity assumptions via standardized residual plots
+detrend_production_lm <- lm(diff(production) ~ time(diff(production)))
+plot(rstandard(detrend_production_lm), ylim=c(-4,4))
+abline(h=+3, col="red")
+abline(h=0)
+abline(h=-3, col="red")
+
+# 2c. Approximately normal
+assumptions_production <- resids_normality_tests(diff(production), assumptions_production)
+```
+
+```{r, paged.print=FALSE}
+# Output assumption checks summary
+assumptions_production
+```
+
+## 3. Determine order of appropriate ARIMA(p,d,q) model for `diff production`
+### 3a. Check ACF, PACF, and EACF plots for `diff production`
+### 3b. Estimate candidate models for `diff production`
+### 3c. Choose the most reasonable model for `diff production`
+
+```{r}
+# 3a. Create sample ACF, PACF, EACF plots to determine candidate pairs of (p,q)
+acf(diff(production))
+pacf(diff(production))
+#eacf(diff(production))
+
+# 3b. Estimate the candidate models using MLE
+plot(armasubsets(y = diff(production), nar = 10, nma = 10, ar.method = "ols"))
+# auto.arima(diff(production))
+
+# 3c. Select model with smallest value of relevant Information Criteria (BIC)
+production_0.0.0 <- arima(diff(production), order=c(0,0,0)) # Base & by auto
+production_0.0.1 <- arima(diff(production), order=c(0,0,1))
+production_9.0.10 <- arima(diff(production), order=c(9,0,10))
+production_9.0.5 <- arima(diff(production), order=c(9,0,5))
+production_9.0.4 <- arima(diff(production), order=c(9,0,4))
+production_9.0.0 <- arima(diff(production), order=c(9,0,0))
+production_9.0.1 <- arima(diff(production), order=c(9,0,1))
+production_9.0.2 <- arima(diff(production), order=c(9,0,2))
+production_8.0.0 <- arima(diff(production), order=c(8,0,0))
+BIC(production_0.0.0)
+BIC(production_0.0.1)
+BIC(production_9.0.10)
+BIC(production_9.0.5)
+BIC(production_9.0.4)
+BIC(production_9.0.0) # Winner
+BIC(production_9.0.1)
+BIC(production_9.0.2)
+BIC(production_8.0.0)
+```
+
+## 4. Conduct parameter estimation for `diff production`
+
+```{r}
+# Not relevant to us at this point in the analysis, comes with later regression
+```
+
+## 5. Conduct model diagnostics for `diff production`
+### 5a. Conduct residual analysis for `diff production`
+
+```{r}
+# Perform residual analysis on the estimated error process
+assumptions_production <- resids_independence_tests(rstandard(production_9.0.0),
+                                                    assumptions_production)
+
+plot(x=rstandard(production_9.0.0), ylim=c(-4,4))
+abline(h=+3, col="red")
+abline(h=0)
+abline(h=-3, col="red")
+
+assumptions_production <- resids_normality_tests(rstandard(production_9.0.0),
+                                                 assumptions_production)
+
+tsdiag(production_9.0.0)
+```
+
+### 5b. Verify candidate model selection by overfitting for `diff production`
+
+```{r}
+# Check if the additional AR(p) and MA(q) parameters are significant or not
+production_1.0.1 <- arima(diff(production), order=c(1,0,1)) # ar1 insignificant
+production_0.0.2 <- arima(diff(production), order=c(0,0,2)) # ma2 insignificant
+production_10.0.0 <- arima(diff(production), order=c(10,0,0)) # ar10 insignificant
+production_9.0.1 <- arima(diff(production), order=c(9,0,1)) # ma1 significant
+```
+
+### 6. Try xreg for weather covariates
+
+```{r}
+# Function to generate xreg matrices
+create_xreg_matrix <- function(h, t, w, include) {
+  xreg <- cbind(
+    if (include[1]) diff(h),
+    if (include[2]) diff(t),
+    if (include[3]) diff(w)
+  )
+  return(xreg)
+}
+
+# Define variables
+variables <- list(
+  h = humidity_agg,
+  t = temperature_agg,
+  w = windspeed_agg
+)
+
+# Generate all possible combinations of the variables
+variable_combinations <- lapply(variables, function(x) c(TRUE, FALSE))
+variable_combinations <- expand.grid(variable_combinations)
+
+# Fit ARIMA models and calculate BIC for each model
+models <- list()
+model_bic <- c()
+
+# Adding baseline ARIMA(0,0,0) for comparison, it's not particularly relevant
+for (i in 1:nrow(variable_combinations)) {
+  include <- as.logical(variable_combinations[i,])
+  xreg <- create_xreg_matrix(variables$h, variables$t, variables$w, include)
+  
+  model_name <- paste0("production_0.0.0_", paste(names(variables)[include], collapse="."))
+  
+  if (all(!include)) {
+    model <- arima(diff(production), order = c(0, 0, 0))
+  } else {
+    model <- arima(diff(production), order = c(0, 0, 0), xreg = xreg)
+  }
+  
+  models[[model_name]] <- model
+  model_bic[model_name] <- BIC(model)
+}
+
+
+for (i in 1:nrow(variable_combinations)) {
+  include <- as.logical(variable_combinations[i,])
+  xreg <- create_xreg_matrix(variables$h, variables$t, variables$w, include)
+  
+  model_name <- paste0("production_9.0.0_", paste(names(variables)[include], collapse="."))
+  
+  if (all(!include)) {
+    model <- arima(diff(production), order = c(9, 0, 0))
+  } else {
+    model <- arima(diff(production), order = c(9, 0, 0), xreg = xreg)
+  }
+  
+  models[[model_name]] <- model
+  model_bic[model_name] <- BIC(model)
+}
+
+
+for (i in 1:nrow(variable_combinations)) {
+  include <- as.logical(variable_combinations[i,])
+  xreg <- create_xreg_matrix(variables$h, variables$t, variables$w, include)
+  
+  model_name <- paste0("production_0.0.1_", paste(names(variables)[include], collapse="."))
+  
+  if (all(!include)) {
+    model <- arima(diff(production), order = c(0, 0, 1))
+  } else {
+    model <- arima(diff(production), order = c(0, 0, 1), xreg = xreg)
+  }
+  
+  models[[model_name]] <- model
+  model_bic[model_name] <- BIC(model)
+}
+
+print(model_bic)
+```
+
+
+
+
+
+# Weather covariates
+
+```{r}
+# Export original covariate time series plots
+export_series(plot_dir, humidty)
+export_series(plot_dir, temperature)
+export_series(plot_dir, windspeed)
+# Export aggregated and diff(aggregated) covariate time series plots
+covariates <- list(humidity_agg, temperature_agg, windspeed_agg)
+for (covariate in covariates) {
+  export_series(plot_dir, covariate)
+  export_series(plot_dir, diff(covariate))
+  export_acf(plot_dir, diff(covariate))
+  export_pacf(plot_dir, diff(covariate))
+  export_stdresids_plot_acf_qq_hist(plot_dir, diff(covariate))
+}
+
+# Function to run the tests
+conduct_tests <- function(data, assumptions) {
+  # As-is data
+  assumptions <- series_unit_root_tests(data, assumptions)
+  assumptions <- resids_independence_tests(data, assumptions)
+  assumptions <- resids_normality_tests(data, assumptions)
+  
+  # Box-Cox data
+  lambda <- BoxCox.lambda(data)
+  boxcox_data <- BoxCox(data, lambda)
+  assumptions <- series_unit_root_tests(boxcox_data, assumptions)
+  assumptions <- resids_independence_tests(boxcox_data, assumptions)
+  assumptions <- resids_normality_tests(boxcox_data, assumptions)
+  
+  # log data
+  assumptions <- series_unit_root_tests(log(data), assumptions)
+  assumptions <- resids_independence_tests(log(data), assumptions)
+  assumptions <- resids_normality_tests(log(data), assumptions)
+  
+  # diff data
+  diff_data <- diff(data)
+  assumptions <- series_unit_root_tests(diff_data, assumptions)
+  assumptions <- resids_independence_tests(diff_data, assumptions)
+  assumptions <- resids_normality_tests(diff_data, assumptions)
+  
+  # diff log data
+  assumptions <- series_unit_root_tests(diff(log(data)), assumptions)
+  assumptions <- resids_independence_tests(diff(log(data)), assumptions)
+  assumptions <- resids_normality_tests(diff(log(data)), assumptions)
+  
+  return(assumptions)
+}
+
+# Run the tests for each variable
+assumptions_humidity <- conduct_tests(humidity_agg, assumptions_humidity)
+assumptions_temperature <- conduct_tests(temperature_agg, assumptions_temperature)
+assumptions_windspeed <- conduct_tests(windspeed_agg, assumptions_windspeed)
+```
+
+
+
+
+
+# Export plots with custom styling
+
+```{r}
+# font_import(paths="localDirectory/fonts/Roboto_Mono/static")
+# roboto <- "Roboto Mono"
+
+col_main <- "#666666"
+col_secondary <- "#999999"
+col_tertiary <- "#d0cece"
+col_accent <- "#4a86e8"
+col_teal <- "#00ffff"
+  
+col_humidity <- "#ff9900"
+col_temperature <- "#4a86e8"
+col_windspeed <- "#00ff00"
+
+plot_dir <- "localDirectory/plots/"
+
+# Helper functions for plotting
+export_acf <- function(plot_dir, series) {
+  
+  name <- toString(substitute(series))
+  
+  png(filename = paste(plot_dir, name, "_acf.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+  
+  par(mai=c(0,0,0,0))
+  
+  acf_result <- acf(series, axes=FALSE, ann=FALSE, las=1,
+                   col=col_accent, lwd=2, ci.col=col_secondary)
+  
+  abline(h=0, lwd=1, col=col_main)
+  
+  # cutoff_pos <- 1.96/length(acf_result)
+  
+  # text(length(acf_result$acf) - 1, cutoff_pos - 0.05, round(cutoff_pos,2),
+       #pos=3, cex=0.8, col=col_secondary, family=roboto)
+  
+  dev.off()
+}
+
+export_pacf <- function(plot_dir, series) {
+  
+  name <- toString(substitute(series))
+  
+  png(filename = paste(plot_dir, name, "_pacf.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+  
+  par(mai=c(0,0,0,0))
+  
+  pacf_result <- pacf(series, axes=FALSE, ann=FALSE, las=1,
+                   col=col_accent, lwd=2, ci.col=col_secondary)
+  
+  abline(h=0, lwd=1, col=col_main)
+  
+  # cutoff_pos <- 1.96/length(acf_result)
+  
+  # text(length(acf_result$acf) - 1, cutoff_pos - 0.05, round(cutoff_pos,2),
+       #pos=3, cex=0.8, col=col_secondary, family=roboto)
+  
+  dev.off()
+}
+
+export_series <- function(plot_dir, series) {
+  
+  name <- toString(substitute(series))
+  
+  png(filename = paste(plot_dir, name, "_series.png", sep=""),
+    width = 1200, height = 600, units = "px", res = 300,
+    bg="transparent")
+  
+  par(mai=c(0.25,0.45,0.1,0.1), mgp=c(3,0.2,0))
+
+  plot(series, las=1, axes=FALSE, ann=FALSE, col=col_accent, lwd=1.5,
+     bty="n", ylab="", xlab="")
+
+  axis(1, tck=-0.01, col=col_secondary, lwd=1, col.axis=col_secondary,
+       family=roboto, cex.axis=0.5)
+  
+  axis(2, las=2, tck=-0.01, col=col_secondary, col.axis=col_secondary, 
+       lwd=1, family=roboto, cex.axis=0.5)
+  
+  points(series, pch=20, col=col_main, cex=0.5)
+  
+  abline(lm(series ~ time(series))$coefficients, col=col_tertiary, lwd=1)
+  
+  dev.off()
+}
+
+export_stdresids_plot_acf_qq_hist <- function(plot_dir, series) {
+  
+  name <- toString(substitute(series))
+  
+  detrend_lm <- lm(series ~ time(series))
+  
+  # std resid plot
+  png(filename = paste(plot_dir, name, "_stdresids_plot.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+  par(mai=c(0,0,0,0), mgp=c(3,0.2,0))
+  plot(rstandard(detrend_lm), ylim=c(-4,4), las=1, axes=FALSE,
+       ann=FALSE, col=col_accent, bty="n", ylab="", xlab="", pch=20)
+  abline(h=+3, col=col_secondary, lty=2)
+  abline(h=0, lwd=1, col=col_main)
+  abline(h=-3,col=col_secondary, lty=2)
+  dev.off()
+  
+
+  # acf
+  png(filename = paste(plot_dir, name, "_stdresids_acf.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+  par(mai=c(0,0,0,0))
+  acf_result <- acf(rstandard(detrend_lm), axes=FALSE, ann=FALSE, las=1,
+                   col=col_accent, lwd=2, ci.col=col_secondary)
+  abline(h=0, lwd=1, col=col_main)
+  dev.off()
+  
+  # qq
+  png(filename = paste(plot_dir, name,"_stdresids_qq.png", sep=""),
+  width = 600, height = 600, units = "px", res = 300,
+  bg="transparent")
+  par(mai=c(0,0,0,0))
+  qqnorm(rstandard(detrend_lm), las=1, axes=FALSE, ann=FALSE,
+         col=col_accent, bty="n", ylab="", xlab="", pch=20)
+  qqline(rstandard(detrend_lm), col=col_main, lwd=1)
+  dev.off()
+  
+  # hist
+  png(filename = paste(plot_dir, name, "_stdresids_hist.png", sep=""),
+  width = 600, height = 600, units = "px", res = 300,
+  bg="transparent")
+  par(mai=c(0,0,0,0))
+  hist(rstandard(detrend_lm), las=1, axes=FALSE, ann=FALSE,
+       col=col_accent, bty="n", ylab="", xlab="", border=col_main)
+  dev.off()
+}
+```
+
+# Export desired plots
+```{r}
+series_ <- list(price, production, diff(log(price)), diff(production))
+
+for (series in series_) {
+  export_acf(plot_dir, series)
+  export_series(plot_dir, series)
+  export_stdresids_plot_acf_qq_hist(plot_dir, series)
+}
+
+# Random one-offs... ###########################################################
+# Replace residual plots for diff production
+# std resid
+png(filename = paste(plot_dir, "difflogprice","_stdResids.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+par(mai=c(0,0,0,0), mgp=c(3,0.2,0))
+detrend_lm <- lm(diff(log(price)) ~ time(diff(log(price))))
+plot(rstandard(detrend_lm), ylim=c(-4,4), las=1, axes=FALSE, ann=FALSE, 
+     col=col_accent, bty="n", ylab="", xlab="", pch=20)
+abline(h=+3, col=col_secondary, lty=2)
+abline(h=0, lwd=1, col=col_main)
+abline(h=-3,col=col_secondary, lty=2)
+dev.off()
+# acf
+difflogprice_lm <- lm(diff(log(price)) ~ time(diff(log(price))))
+export_acf(plot_dir, rstandard(difflogprice_lm))
+# qq
+png(filename = paste(plot_dir, "difflogprice","_qq.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+par(mai=c(0,0,0,0))
+qqnorm(rstandard(difflogprice_lm), las=1, axes=FALSE, ann=FALSE,
+       col=col_accent, bty="n", ylab="", xlab="", pch=20)
+qqline(rstandard(difflogprice_lm), col=col_main, lwd=1)
+dev.off()
+# hist
+png(filename = paste(plot_dir, "difflogprice","_hist.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+par(mai=c(0,0,0,0))
+hist(rstandard(difflogprice_lm), las=1, axes=FALSE, ann=FALSE,
+     col=col_accent, bty="n", ylab="", xlab="", border=col_main)
+dev.off()
+
+
+# Replace residual plots for diff production
+# std resid
+png(filename = paste(plot_dir, "diffprod","_stdResids.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+par(mai=c(0,0,0,0), mgp=c(3,0.2,0))
+detrend_lm <- lm(diff(production) ~ time(diff(production)))
+plot(rstandard(detrend_lm), ylim=c(-4,4), las=1, axes=FALSE, ann=FALSE,
+     col=col_accent, bty="n", ylab="", xlab="", pch=20)
+abline(h=+3, col=col_secondary, lty=2)
+abline(h=0, lwd=1, col=col_main)
+abline(h=-3,col=col_secondary, lty=2)
+dev.off()
+# acf
+diffprod_lm <- lm(diff(production) ~ time(diff(production)))
+export_acf(plot_dir, rstandard(diffprod_lm))
+# qq
+png(filename = paste(plot_dir, "diffprod","_qq.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+par(mai=c(0,0,0,0))
+qqnorm(rstandard(diffprod_lm), las=1, axes=FALSE, ann=FALSE,
+       col=col_accent, bty="n", ylab="", xlab="", pch=20)
+qqline(rstandard(diffprod_lm), col=col_main, lwd=1)
+dev.off()
+
+# hist
+png(filename = paste(plot_dir, "diffprod","_hist.png", sep=""),
+    width = 600, height = 600, units = "px", res = 300,
+    bg="transparent")
+par(mai=c(0,0,0,0))
+hist(rstandard(diffprod_lm), las=1, axes=FALSE, ann=FALSE,
+     col=col_accent, bty="n", ylab="", xlab="", border=col_main)
+dev.off()
+
+# ARIMA Subsets for diff production
+plot(
+  armasubsets(y = diff(production), nar = 10, nma = 10, ar.method = "ols"),
+  las = 1,
+  axes = FALSE,
+  ann = FALSE,
+  col = gray(c(seq(0.4, 0.7, length = 10), 0.9)),
+  bty = "n",
+  ylab = "",
+  xlab = "",
+  font = roboto,
+  col.axis = "red"
+)
+
+png(filename = paste(plot_dir, name, "_armasubsets.png", sep=""),
+    width = 1200, height = 600, units = "px", res = 300,
+    bg="transparent")
+  
+  par(mai=c(0.25,0.45,0.1,0.1), mgp=c(3,0.2,0))
+
+  plot(series, las=1, axes=FALSE, ann=FALSE, col=col_accent, lwd=1.5,
+     bty="n", ylab="", xlab="")
+
+  axis(1, tck=-0.01, col=col_secondary, lwd=1, col.axis=col_secondary,
+       family=roboto, cex.axis=0.8)
+  
+  axis(2, las=2, tck=-0.01, col=col_secondary, col.axis=col_secondary, 
+       lwd=1, family=roboto, cex.axis=0.8)
+  
+  points(series, pch=20, col=col_main, cex=0.5)
+
+  my_colors <- colorRampPalette(c(col_accent, "#FFFFFF"))(11)
+  
+  # Plot the subsets using the custom colors
+  png(filename = paste(plot_dir, "diffprod_armasubsets.png", sep=""),
+     width = 2400, height = 1800, units = "px", res = 300,
+      bg="transparent")
+  par(mar=c(0,0,0,0))
+  plot(
+    armasubsets(y = diff(production), nar = 10, nma = 10, ar.method = "ols"), 
+    las = 1, 
+    axes = FALSE, 
+    ann = FALSE, 
+    col = my_colors, 
+    bty = "n", 
+    ylab = "", 
+    xlab = "",
+    lwd = 0,
+    draw.grid=T
+    )
+
+# ARIMA subsets for diff log Price
+png(filename = paste(plot_dir, "difflogprice_arimaSubsets.png", sep=""),
+   width = 2400, height = 1800, units = "px", res = 300,
+    bg="transparent")
+par(mar=c(0,0,0,0))
+plot(
+  armasubsets(y = diff(log(price)), nar = 10, nma = 10, ar.method = "ols"), 
+  las = 1, 
+  axes = FALSE, 
+  ann = FALSE, 
+  col = my_colors, 
+  bty = "n", 
+  ylab = "", 
+  xlab = "",
+  lwd = 0,
+  draw.grid=T
+  )
+dev.off()
+
+
+# tsdiag outputs
+# diff log price ARIMA(0,0,0)
+png(filename = paste(plot_dir, "difflogprice_0.0.0_tsa.png", sep=""),
+   width = 2160, height = 2400, units = "px", res = 300,
+    bg="transparent")
+tsdiag(price_0.0.0)
+dev.off()
+# diff log price ARIMA(9,0,7)
+png(filename = paste(plot_dir, "difflogprice_9.0.7_tsa.png", sep=""),
+   width = 2160, height = 2400, units = "px", res = 300,
+    bg="transparent")
+tsdiag(price_9.0.7)
+dev.off()
+# diff production ARIMA(0,0,1)
+png(filename = paste(plot_dir, "diffproduction_0.0.1_tsa.png", sep=""),
+   width = 2160, height = 2400, units = "px", res = 300,
+    bg="transparent")
+tsdiag(production_0.0.1)
+dev.off()
+# diff production ARIMA(9,0,0)
+png(filename = paste(plot_dir, "diffproduction_9.0.0_tsa.png", sep=""),
+   width = 2160, height = 2400, units = "px", res = 300,
+    bg="transparent")
+tsdiag(production_9.0.0)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\newpage
+# Time Series Analysis: Process Outline/Summary
+## SHORT VERSION
+0. Load and format data: correct missing values, dummy variables, aggregation.
+1. Plot, examine, and correct the as-is data for trends to arrive at a stationary error process, Xt:
+    a. Determine deterministic trends and fix using model approaches or data transformations.
+    b. Determine stochastic trends and fix using differencing and unit-root hypothesis tests.
+2. Analyze standardized residuals to verify 4 key assumptions made on Xt:
+    a. Conduct independence tests to check independence of Xt.
+    b. Check for zero-mean and homoscedasticity via residual plots.
+    c. Check for normality via QQ plots, histograms, and Shapiro-Wilks test.
+3. Determine order of appropriate ARIMA(p,d,q) model:
+    a. Check ACF, PACF, and EACF plots to determine candidate pairs of (p,q).
+    b. Estimate the candidate models using Maximum Likelihood Estimation (MLE).
+    c. Choose the most reasonable model with the smallest value of relevant Information Criteria.
+4. Conduct parameter estimation for chosen ARIMA(p,d,q) model to determine AR(p) and MA(q) coefficients.
+5. Conduct model diagnostics on chosen model to determine if choice of (p,d,q) truly works for the observed data:
+    a. Conduct residual analysis on the estimated error process to check for independence, zero-mean, homoscedasticity, and normality.
+    b. If chosen ARIMA(p,d,q) was truly a good fit, the additional AR(p) and MA(q) parameters will not be significant and will result in a model with redundant parameters, causing the estimates of the ARIMA(p,d,q) part to become invalid.
+
+\newpage
+## EXTENDED VERSION
+0. Load and format data: correct missing values, dummy variables, aggregation.
+
+1. Plot, examine, and correct for trends to arrive at the (hopefully stationary? stationarity needed for ARMA modeling) error/stochastic process, $X_t$:  
+    - Deterministic Trends (seasonality, linearity)
+        - Fix using...
+            - Model Approaches: linear trend models, seasonal means models, cosine models
+            - Data Transformations: log, percentage change ($\equiv \iff$ stationary)
+        - *Almonds and Weather:* Remove trend using linear trend model (parametric): $$Y_t = \beta_0 + \beta_1 t + X_t \text{ where } \hat{X_t} = Y_t - \hat{\beta_0} + \hat{\beta_1} t $$
+    - Stochastic Trends (non-stationarity)
+        - Fix using...
+            - Differencing. Determine order of integration, $d$, by performing repeated unit root tests until $d$ is clear. Take $d$ differences.
+        - Unit-Root Hypothesis Tests:
+            - Augmented Dickey Fuller (ADF), $H_0$: "$Y_t$ non-stationary."
+            - Phillips–Perron (PP), $H_0$: "$Y_t$ non-stationary."
+            - Kwiatkowski–Phillips–Schmidt–Shin (KPSS), $H_0$: "$Y_t$ stationary."
+
+
+2. Analyze the *standardized residuals* to verify the 4 key conditions/assumptions made on $X_t$:  
+    - Independence* Tests: Needed for regression coefficients to be meaningful. Check independence first, because if $X_t$ independent then $X_t \stackrel{iid}{\sim}$ and the other 3 assumption checks aren't needed.):
+        - Runs (NON-parametric), $H_0$: "$X_t$ are independent."
+        - Ljung-Box / Portmanteau, $H_0$: "$X_t$ are independent".
+        - ACF (for $\text{MA(q)}$; indirect and direct effects)
+            - Population ACF: Use if zero-mean stationarity is *known/true*. If $\text{MA}(q)$, cuts off at lag $q$. Bounds are $\pm \frac{1.96}{\sqrt{n}}$
+            - Sample ACF: Use if stationarity *either unknown or false*.
+        - PACF (for $\text{AR(p)}$; direct effects)
+            - Population PACF: Use if zero-mean stationarity is *known/true*.  If $\text{AR}(p)$, cuts off at lag $p$. Bounds are $\pm \frac{1.96}{\sqrt{n}}$
+            - Sample PACF: Use if stationarity *either unknown or false*.
+        - If independence fails: use the HAC estimator as it relaxes the need for the independence assumption.
+    - Zero-Mean Tests: Check via residual plot (or goodness-of-fit tests, irrelevant to this course). Should have *no* observable pattern. *Must have a zero-mean for a linear trend model to be appropriate.*
+    - Homoscedasticity Tests: check via residual plot. Should have *no* observable pattern.
+    - Normality Tests:
+        - QQ Plot (tail behavior), $H_0$: "$X_t$ is normally distributed." Points should be on the diagonal/quantile line, no light- or heavy-tailed behavior.
+        - Histogram (skew), $H_0$: "$X_t$ is normally distributed." Should closely mirror an ideal ~Normal distribution without skew. 
+        - Shapiro-Wilks, $H_0$: "$X_t$ is normally distributed."
+
+3. Once stationary, you can choose to determine the order of an appropriate $\text{ARIMA}(p, d, q)$ model.  
+    1. Check ACF, PACF, and EACF plots to determine candidate pairs of $(p, q)$.
+    2. Estimate the candidate models using Maximum Likelihood Estimation (MLE).
+    3. Assess the candidate models relative to each other. Choose *the most reasonable model with the smallest value* of the relevant Information Criteria / "metric":
+        - Forecasting or Predicting future values of $Y_t$: AIC and/or AICc
+        - Estimating or "Explaining" aspects of the true model of $Y_t$: BIC
+        
+4. Conduct parameter estimation for your chosen $\text{ARIMA}(p, d, q)$ model to determine the $\text{AR}(p)$ coefficients ($\phi_1, \cdots, \phi_p$), the $\text{MA}(q)$ coefficients ($\theta_1, \cdots, \theta_q$), and the $\sigma_e^2$. This will give us an estimate of the error $e_t$: $$\hat{e_t} = Y_t - \hat{\theta_0} - \hat{\phi_1} Y_{t-1} - \hat{\phi_2} Y_{t-2} - \cdots - \hat{\phi_p} Y_{t-p} \,; \, \text{ for } \, t = p+1, \dots, n$$ *Only the LSE and MSE methods are recommended:*  
+    - Least Squares Estimation (LSE [CSS]), for $q \neq 0$and for *large* $n$.
+        - *If* $Y_t$ is $\text{AR}(p)$ then LSE $\approx$ MoM. Advantage of the LSE (CSS) estimator is that it is well-defined for all $\text{MA}(q)$ and $\text{ARMA}(p, q)$ models even when $q > 0$.
+        - *If* sample size $n$ is "large enough" then LSE $\approx$ MSE.
+    - Maximum Likelihood Estimation (MSE), for $q \neq 0$ and for *small* $n$.
+        - Gives more accurate estimates with nice asymptotic properties, but requires numerical approximations and therefore has slower computation than LSE.
+        - Performs pretty well when there are a few departures from the ~Normality assumption.
+        - *If* sample size $n$ is "large enough" then MSE $\approx$ LSE. 
+    - Method of Moments (MoM) / Yule-Walker Estimation, only appropriate for $\text{ARMA}(p, q)$ model where $q \leq 0$ (!!!). 
+        - If there is moving-average type dependence in the data, then... 
+            - [1] MoM may not have a single solution (could have no solutions or multiple solutions).
+            - [2] MoM may have unnecessarily high variance.
+        
+5. Conduct model diagnostics on the chosen model to determine if your choice of $(p, d, q)$ truly works for the observed data.
+    1. Once we have an estimate of the error $e_t$ from our parameter estimation in step 4, we can define our prediction error as $\hat{e_t} = Y_t - \hat{Y_t}$. Then, we *conduct residual analysis on the estimated error process* ("residuals"), $\{ \hat{e_t} \}$:  
+        - For an $\text{ARMA}(p, q)$ model, $\{ \hat{e_t} \}$ *should behave like an iid process* **if**: 
+            - [1] our specified $\text{ARMA}(p, q)$ is "correct."
+            - [2] our specified coefficients are "correct."
+        - Independence Tests:
+            - Runs test.
+            - ACF plot *should* decay to zero after lag $0$.
+            - ACF *Tests* for some time series $\{ u_t \}$. Use the **Sample ACF of residuals** to test $H_0$: "$u_t$ are uncorrelated." To implement the following in R, use `stats::Box.test()`.
+                - Box-Pierce / Portmanteau Test, has that $\sqrt{n} \cdot r_k \stackrel{D}{\sim} \text{N}(0,1)$. Not ideal because Box-Pierce/Portmanteau relies on $\sim \chi^2$, which gives fairly poor approximations even for large $n$.
+                - Ljung-Box Test is more "accurate." Holds that $Q_* \stackrel{D}{\sim} \chi^2_{K-p-q}$; where $K := $ maximum lag, $r_k$ is the sample ACFs of $\hat{e_t}$. We would reject $H_0$ if $Q_* > $ the *5% upper percentile* of $\chi^2_{K-p-q}$.
+                - *Important:* use `stats::tsdiag()` to automatically generate diagnostic plots for an $\text{ARIMA}(p, d, q)$ model—gives: standardized residual plot, sample ACF plot for residuals, p-values for the Ljung-Box test *for different* $K$*'s*—*HOWEVER*, the last plot for p-values of the Ljung-Box test is not correct because it incorrectly uses $\text{df} = K$ as to the correct $\text{df} = K-p-q$. To fix this, use  `TSA::tsdiag.Arima()` so that R will recognize that you want the `tsdiag` of an $\text{ARIMA}(p, d, q)$ fit.
+        - Zero-mean and Homoscedasticity Tests: Check via residual plot. Should have *no* observable pattern, scattered around 0. 
+            - If we're using *standardized residuals* ($\hat{e^{*}_{t}} = \frac{\hat{e_t}}{\hat{\sigma_e^2}}$) then by the normality assumption we'd expect to see the majority of the residuals $|\hat{e^{*}_{t}}| < 3 \, (\approx)$.
+        - Normality Tests (*Departing from the normality assumption is not as serious as the other assumptions, especially if we have a "large" sample size, $n$): 
+            - QQ plot close to ideal ~Normal
+            - Histogram close to ideal ~Normal
+            - Shapiro-Wilks rejected (so errors are ~Normal). 
+
+    2. If you chose your $\text{ARIMA}(p, d, q)$ based on parameter estimation from step 4, include and analyze the two following *additional* models. Do this to use overfitting as a tool for reassuring yourself that your chosen model is *truly* best for your data:  
+        - [1] $\text{ARIMA}(p + 1, d, q)$: Add one more lag to the $\text{AR}(p)$ component.
+        - [2] $\text{ARIMA}(p, d, q + 1)$: Add one more lag to the $\text{MA}(q))$ component.
+    
+    3. *If* your chosen $\text{ARIMA}(p, d, q)$ was truly a good fit, then the additional $\text{AR}(p)$ and $\text{MA}(q)$ parameters...
+        - ...will NOT be significant.
+        - ...will result in a model with redundant parameters. This will cause the estimates of the $\text{ARIMA}(p, d, q)$ part to become invalid.
+        
