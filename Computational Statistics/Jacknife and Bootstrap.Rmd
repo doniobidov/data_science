@@ -1,0 +1,559 @@
+---
+title: 'MA5761 Homework #7'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+    toc_float: yes
+---
+
+```{r}
+# Load the data
+data(aircondit7, package = "boot")
+data(scor, package = "bootstrap")
+
+# Load the libraries
+library(ggplot2)
+library(boot)
+library(dplyr)
+```
+
+For homework assignments in this course, you will be provided with a knitted R notebook and the .rmd file used to create it. You are *encouraged* (but not required) to use the .rmd file as a template for your solutions.
+
+## Hours-to-failure of Air Conditioning Equipment
+The data frame `aircondit7` in the `boot` package consists of times between failure of air conditioning equipment in a Boeing 720 aircraft. An estimator of what is called the *hazard rate* $\lambda$ would be 
+$$\hat\lambda=\frac1{\bar X}$$
+where $\bar X$ is the sample mean of the times between failures of the equipment.
+
+For problems in this first exercise, you should write R code that ***does not*** use any installed R packages (such as functions from the `boot` or `bootstrap` packages).
+
+### Jackknife Estimates
+Use the jackknife to estimate the bias and standard error of the estimator $\hat\lambda$. Also provide a bias-corrected point estimate of $\lambda$. Does the bias in this estimator appear to be "large"? Calculate the ratio of the estimated bias over the estimated standard error. 
+
+Your code should not use any functions from other packages (such as `boot` or `bootstrap`), but should rely solely on functions from the base R installation.
+
+You will need the jackknife replicates in the next part of this exercise, so you should store those in a vector for easy use.
+
+```{r}
+# Extract the hours column
+hours <- aircondit7$hours
+
+N <- length(hours)
+lambda_hat <- 1 / mean(hours)
+
+# Function to compute the jackknife replicates
+jackknife <- function(data, func) {
+  n <- length(data)
+  jk_estimates <- numeric(n)
+  
+  for (i in 1:n) {
+    jk_sample <- data[-i]  # Leave one observation out
+    jk_estimates[i] <- func(jk_sample)
+  }
+  
+  return(jk_estimates)
+}
+
+# Compute jackknife replicates for the estimator lambda_hat
+jk_replicates <- jackknife(hours, function(x) 1 / mean(x))
+
+# Compute bias and standard error
+bias_jk <- (N-1) * (mean(jk_replicates) - lambda_hat)
+se_jk <- sqrt((N-1) * mean((jk_replicates-mean(jk_replicates))^2))
+
+# Bias-corrected estimate
+lambda_bias_corrected_jk <- lambda_hat - bias_jk
+
+# Ratio of estimated bias over estimated standard error
+ratio_bias_se_jk <- bias_jk / se_jk
+
+# Display results
+cat("Bias:", bias_jk, "\n")
+cat("Bias / lambda_hat (%):", 100*bias_jk/lambda_hat, "\n")
+cat("Standard Error:", se_jk, "\n")
+cat("Bias-Corrected Estimate of Lambda:", lambda_bias_corrected_jk, "\n")
+cat("Ratio of Estimated Bias over Estimated Standard Error:", ratio_bias_se_jk, "\n")
+```
+
+**The bias does not seem to be very high**
+
+### Bootstrap Estimates
+Create a sample $B=2000$ bootstrap replicates $\hat\lambda^\ast$. *Do not* use the `boot` (or related functions) for this exercise. 
+
+Create a histogram of the estimated sampling distribution of $\hat\lambda$ and make comments on it. Particularly, does it appear plausible that this sampling distribution is normally distributed?
+
+Use the bootstrap samples to estimate the bias and standard error of $\hat\lambda$. Also produce a bias-corrected point estimate of $\lambda$, and also calculate the ratio of bias over standard error. 
+
+```{r}
+# Number of bootstrap replicates
+B <- 2000
+
+# Function to compute the bootstrap replicates
+bootstrap <- function(data, B, func) {
+  n <- length(data)
+  bootstrap_estimates <- numeric(B)
+  
+  for (i in 1:B) {
+    bootstrap_sample <- sample(data, replace = TRUE)  # Create a bootstrap sample
+    bootstrap_estimates[i] <- func(bootstrap_sample)
+  }
+  
+  return(bootstrap_estimates)
+}
+
+# Compute bootstrap replicates
+bootstrap_replicates <- bootstrap(hours, B, function(x) 1 / mean(x))
+
+# Create a data frame
+df <- data.frame(lambda = bootstrap_replicates)
+
+# Plot histogram using ggplot
+ggplot(df, aes(x = lambda)) +
+  geom_histogram(binwidth = 0.002, fill = "skyblue", color = "black") +
+  labs(x = "Bootstrap Estimates of Lambda", y = "Frequency", 
+       title = "Histogram of Bootstrap Estimates")
+```
+
+**The histogram does not appear to follow a normal distribution due to a noticeable right skew. It is unimodal, with a single peak.**
+
+```{r}
+# Estimate bias
+bias_bootstrap <- mean(bootstrap_replicates) - lambda_hat
+
+# Estimate standard error
+se_bootstrap <- sd(bootstrap_replicates)
+
+# Bias-corrected estimate
+lambda_bias_corrected_bootstrap <- lambda_hat - bias_bootstrap
+
+# Ratio of bias over standard error
+ratio_bias_se_bootstrap <- bias_bootstrap / se_bootstrap
+
+# Display results
+cat("Bias:", bias_bootstrap, "\n")
+cat("Standard Error:", se_bootstrap, "\n")
+cat("Bias-Corrected Estimate of Lambda:", lambda_bias_corrected_bootstrap, "\n")
+cat("Ratio of Bias over Standard Error:", ratio_bias_se_bootstrap, "\n")
+```
+
+### Best Estimator
+Under the assumption that this population comes from an exponential distribution, it can be proven that the *minimum-variance unbiased estimator* is equal to
+$$\hat\lambda_{MVUE}=\frac{n-1}{\sum_{j=1}^nX_j}=\frac{n-1}{n}\cdot\frac1{\bar X}$$
+The standard error of this estimator is equal to
+$$\mathsf{SE}(\hat\lambda_{MVUE})=\frac{\lambda}{\sqrt{n-2}}$$
+which depends on the unknown parameter $\lambda$. The typical way of estimating this standard error would be as
+$$\widehat{\mathsf{SE}}(\hat\lambda_{MVUE})=\frac{\hat\lambda_{MVUE}}{\sqrt{n-2}}$$
+
+Calculate the value of the point estimate $\hat\lambda_{MVUE}$ and its standard error using the above formulas. Compare the point estimate to the bias-corrected point estimates from the jackknife and bootstrap samples, and also compare the estimated standard errors of these three estimators.
+
+```{r}
+# Calculate values
+lambda_hat_MVUE <- (N - 1) / N * (1 / mean(hours))
+SE_hat_MVUE <- lambda_hat_MVUE / sqrt(N - 2)
+
+# Compare the estimates
+cat("MVUE Estimator of Lambda:", lambda_hat_MVUE, "\n")
+cat("Standard Error of MVUE Estimator:", SE_hat_MVUE, "\n")
+cat("Bias-Corrected Estimate from Jackknife:", lambda_bias_corrected_jk, "\n")
+cat("Bias-Corrected Estimate from Bootstrap:", lambda_bias_corrected_bootstrap, "\n")
+cat("Estimated Standard Error from Jackknife:", se_jk, "\n")
+cat("Estimated Standard Error from Bootstrap:", se_bootstrap, "\n")
+```
+**The estimates of lambda and standard errors obtained from all three methods are very close to each other.**
+
+### Bootstrap Confidence Intervals
+Use your bootstrap samples to create confidence intervals using the four methods studied in class:
+
+- the standard normal confidence interval
+- the basic confidence interval
+- the percentile confidence interval
+- the BCa confidence interval
+
+You should use your own code to produce these confidence intervals (i.e. *do not* use the `boot.ci()` function). 
+
+It can also be shown that, under the assumption that the sample comes from an exponential distribution, that an *exact* 95% confidence interval takes the form
+$$\left(\frac{\chi^2_{2n,0.025}}{2\sum_{j=1}^nX_j},\frac{\chi^2_{2n,0.975}}{2\sum_{j=1}^nX_j}\right)$$
+where $\chi^2_{2n,0.025}$ and $\chi^2_{2n,0.975}$ are the 0.025 and 0.975-quantiles from the $\chi^2$ distribution with $2n$ degrees of freedom. Calculate this confidence interval as well. 
+
+Place all five of these confidence intervals in a data frame (or some other rectangular array object) with a column (or row names) indicating the type of interval and further columns `LCL`, `UCL`, and `Width` (the lower confidence limit, upper confidence limit, and width of the interval). Print this data frame (or matrix) and compare the resulting intervals. Which of these intervals is the narrowest? Which do you think is least trustworthy?
+
+```{r}
+# BCa Confidence Interval function
+bca_confidence_interval <- function(bootstrap_estimates, alpha) {
+  B <- length(bootstrap_estimates)
+  
+  # Estimate the bias correction factor (a_hat)
+  jackknife_replicates <- sapply(1:B, function(i) mean(bootstrap_estimates[-i]))
+  a_hat <- -1 * DescTools::Skew(jackknife_replicates, method = 1) / (6 * sqrt(B))
+  
+  # Estimate z0
+  p <- mean(bootstrap_estimates < mean(bootstrap_estimates))
+  z0_hat <- qnorm(p)
+  
+  # Compute alpha_1 and alpha_2
+  z <- qnorm(c(alpha / 2, 1 - alpha / 2))
+  alpha_1 <- pnorm(z0_hat + (z0_hat + z[1]) / (1 - a_hat * (z0_hat + z[1])))
+  alpha_2 <- pnorm(z0_hat + (z0_hat + z[2]) / (1 - a_hat * (z0_hat + z[2])))
+  
+  # Calculate BCa confidence interval
+  bca_ci <- quantile(bootstrap_estimates, c(alpha_1, alpha_2))
+  
+  return(bca_ci)
+}
+
+# Bootstrap function to compute replicates and confidence intervals
+bootstrap_and_intervals <- function(data, B, func) {
+  n <- length(data)
+  
+  # Compute bootstrap replicates
+  bootstrap_estimates <- numeric(B)
+  for (i in 1:B) {
+    bootstrap_sample <- sample(data, replace = TRUE)
+    bootstrap_estimates[i] <- func(bootstrap_sample)
+  }
+  
+  # Standard normal confidence interval
+  se_bootstrap <- sd(bootstrap_estimates)
+  z <- qnorm(0.975)
+  LCL_normal <- lambda_hat - z * se_bootstrap
+  UCL_normal <- lambda_hat + z * se_bootstrap
+  width_normal <- UCL_normal - LCL_normal
+  
+  # Basic confidence interval
+  LCL_basic <- 2 * lambda_hat - quantile(bootstrap_estimates, 0.975)
+  UCL_basic <- 2 * lambda_hat - quantile(bootstrap_estimates, 0.025)
+  width_basic <- UCL_basic - LCL_basic
+  
+  # Percentile confidence interval
+  LCL_percentile <- quantile(bootstrap_estimates, 0.025)
+  UCL_percentile <- quantile(bootstrap_estimates, 0.975)
+  width_percentile <- UCL_percentile - LCL_percentile
+  
+  # BCa confidence interval
+  alpha <- 0.05
+  bca_ci <- bca_confidence_interval(bootstrap_estimates, alpha)
+  
+  # Exact 95% confidence interval for exponential distribution
+  chi_sq_1 <- qchisq(0.025, df = 2 * n)
+  chi_sq_2 <- qchisq(0.975, df = 2 * n)
+  LCL_exact <- chi_sq_1 / (2 * sum(data))
+  UCL_exact <- chi_sq_2 / (2 * sum(data))
+  width_exact <- UCL_exact - LCL_exact
+  
+  # Create a data frame with intervals
+  intervals_df <- data.frame(
+    Type = c("Standard Normal", "Basic", "Percentile", "BCa", "Exact 95% for Exponential"),
+    LCL = c(LCL_normal, LCL_basic, LCL_percentile, bca_ci[1], LCL_exact),
+    UCL = c(UCL_normal, UCL_basic, UCL_percentile, bca_ci[2], UCL_exact),
+    Width = c(width_normal, width_basic, width_percentile, bca_ci[2] - bca_ci[1], width_exact)
+  )
+  
+  return(intervals_df)
+}
+
+# Usage of the function with the given data and 2000 bootstrap replicates
+result_intervals <- bootstrap_and_intervals(aircondit7$hours, 2000, function(x) 1 / mean(x))
+print(result_intervals)
+```
+
+**The Basic and Percentile confidence intervals are the narrowest. The Standard Normal confidence interval appears to be the least trustworthy as it assumes normality. Notably, the Basic CI differs from the other results.**
+
+## Exam Scores
+The data frame `scor` in the `bootstrap` package contains test scores on students who took examinations in five subjects (mechanics, vectors, algebra, analysis, and statistics). 
+
+In a principal component analysis, we study the eigenvalues $\lambda_j$ and eigenvectors $e_j$ of the covariance matrix $\Sigma$. One important statistic is 
+$$\theta=\frac{\lambda_1}{\sum_{j=1}^5\lambda_j}$$
+which is loosely interpreted as the proportion of variance  by the first principal component. 
+
+A natural choice of estimator of $\theta$ is
+$$\hat\theta=\frac{\hat\lambda_1}{\sum_{j=1}^5\hat\lambda_j}$$
+where $\hat\lambda_j$ are the eigenvalues of the *sample covariance* matrix $\hat\Sigma$ of the five variables.
+
+### Proportion of Explained Variance
+Write a function which inputs a single data frame and returns the estimate $\hat\theta$ defined above. Note that the `eigen()` function is a useful R function that can obtain eigenvalues and eigenvectors of a square matrix. 
+
+Apply `eigen()` to the covariance matrix of the `scor` data frame and study the output. Notice that the eigenvalues are sorted from largest to smallest, so that $\hat\lambda_1$ will be the first eigenvalue. 
+
+Report the value of $\hat\theta$ for the `scor` data.
+
+```{r}
+# Define a function to calculate the estimate theta_hat
+calculate_theta_hat <- function(data) {
+  # Calculate the covariance matrix
+  cov_matrix <- cov(data)
+  
+  # Obtain eigenvalues and eigenvectors
+  eigen_info <- eigen(cov_matrix)
+  eigenvalues <- eigen_info$values
+  
+  # Calculate theta_hat
+  theta_hat <- eigenvalues[1] / sum(eigenvalues)
+  
+  return(theta_hat)
+}
+
+# Calculate theta_hat for the scor data
+theta_hat_scor <- calculate_theta_hat(scor)
+print(theta_hat_scor)
+```
+
+### Jackknife Estimates
+Use your function to obtain an estimate of bias and standard error of $\hat\theta$, and also produce a bias-corrected estimate of $\hat\theta$. You may code the jackknife sampling on your own, or alternatively may use functions from other packages that implement jackknife sampling.
+
+```{r}
+# Define a function to perform jackknife resampling
+jackknife_theta <- function(data) {
+  n <- nrow(data)
+  theta_hat_values <- numeric(n)
+  
+  for (i in 1:n) {
+    # Create a jackknife sample by removing one observation
+    jackknife_sample <- data[-i, ]
+    # Calculate theta_hat for the jackknife sample
+    theta_hat_values[i] <- calculate_theta_hat(jackknife_sample)
+  }
+  
+  # Calculate bias, standard error, and bias-corrected estimate
+  bias_jk <- (n - 1) * (mean(theta_hat_values) - theta_hat_scor)
+  se_jk <- sqrt((n - 1) * mean((theta_hat_values - mean(theta_hat_values))^2))
+  theta_bias_corrected_jk <- theta_hat_scor - bias_jk
+  
+  return(list(bias = bias_jk, se = se_jk, bias_corrected = theta_bias_corrected_jk, jackknife_values = theta_hat_values))
+}
+
+# Obtain jackknife estimates for theta_hat
+jackknife_results <- jackknife_theta(scor)
+```
+
+### Bootstrap Estimates
+Sample $B=2000$ bootstrap replicates $\hat\theta^\ast$ from the `scor` data set. You may either use the `boot()` function, or code this on your own. 
+
+Create a histogram of the estimated sampling distribution of $\hat\theta$ and make some brief comments on it. Is it plausible that this is normally distributed?
+
+Obtain estimates of the bias and standard error of $\hat\theta$, as well as a bias-corrected estimate of $\theta$, from your bootstrap replicates. Further, calculate 95% confidence intervals on $\theta$ using the four types of bootstrap confidence intervals investigated in class. Do you see any major differences between these different intervals?
+
+```{r}
+# Define a function to perform bootstrap sampling
+bootstrap_theta <- function(data, B) {
+  n <- nrow(data)
+  theta_hat_values <- numeric(B)
+  
+  for (i in 1:B) {
+    # Create a bootstrap sample
+    bootstrap_sample <- data[sample(n, replace = TRUE), ]
+    # Calculate theta_hat for the bootstrap sample
+    theta_hat_values[i] <- calculate_theta_hat(bootstrap_sample)
+  }
+  
+  return(theta_hat_values)
+}
+
+# Number of bootstrap replicates
+B <- 2000
+
+# Generate bootstrap replicates for theta_hat
+bootstrap_replicates <- bootstrap_theta(scor, B)
+
+# Histogram of the estimated sampling distribution of theta_hat
+hist(bootstrap_replicates, breaks = 30, col = "skyblue", xlab = "Bootstrap Estimates of theta_hat", main = "Histogram of Bootstrap Estimates")
+```
+
+**The histogram looks like it comes from the normal distribution. It is unimodal and might have some left skewness.**
+
+```{r}
+# Compute the bias
+bias_bootstrap <- mean(bootstrap_replicates) - theta_hat_scor
+
+# Compute the standard error
+se_bootstrap <- sd(bootstrap_replicates)
+
+# Calculate the bias-corrected estimate
+theta_bias_corrected_bootstrap <- theta_hat_scor - bias_bootstrap
+
+# Display results
+cat("Bias:", bias_bootstrap, "\n")
+cat("Standard Error:", se_bootstrap, "\n")
+cat("Bias-Corrected Estimate of Theta:", theta_bias_corrected_bootstrap, "\n")
+```
+
+```{r}
+z <- qnorm(0.975)
+LCL_normal <- theta_hat_scor - z * se_bootstrap
+UCL_normal <- theta_hat_scor + z * se_bootstrap
+cat("Standard Normal CI (LCL, UCL):", LCL_normal, ",", UCL_normal, "\n")
+
+LCL_basic <- 2 * theta_hat_scor - quantile(bootstrap_replicates, 0.975)
+UCL_basic <- 2 * theta_hat_scor - quantile(bootstrap_replicates, 0.025)
+cat("Basic CI (LCL, UCL):", LCL_basic, ",", UCL_basic, "\n")
+
+LCL_percentile <- quantile(bootstrap_replicates, 0.025)
+UCL_percentile <- quantile(bootstrap_replicates, 0.975)
+cat("Percentile CI (LCL, UCL):", LCL_percentile, ",", UCL_percentile, "\n")
+
+# Compute BCa CI
+bca_ci <- bca_confidence_interval(bootstrap_replicates, 0.05)
+cat("BCa CI (LCL, UCL):", bca_ci[1], ",", bca_ci[2], "\n")
+```
+
+**There is no major difference between these 4 CIs**
+
+## Nitrogen Levels in New York Rivers
+The data set stored in the file `nyrivers.csv` contains measurements of nitrogen levels in various rivers in New York. The variables in this data set are
+
+- `River`, the name of the river
+- `Agr`, the percentage of agricultural land surrounding the river
+- `Forest`, the percentage of forested land surrounding the river
+- `Rsdntial`, the percentage of residential land surrounding the river
+- `ComIndl`, the percentage of land dedicated to commerical and industrial uses surrounding the river
+- `Nitrogen`, the nitrogen levels measured in the river
+
+Import this data set into R with the `read.csv` function:
+```{r}
+ny <- read.csv('nyrivers.csv', row.names = 1)
+```
+Note that this file must be in your working directory in order to read the data file.
+
+### Regression: Resampling Cases
+Suppose that we wish to fit a linear regression model which estimates `Nitrogen` (the response variable) as a linear combination of `Forest`, `Agr`, and `ComIndl`. 
+
+Estimate the bias and standard error of each of the three partial regression coefficients by using *cases resampling* with the bootstrap procedure. Further, create percentile and BCa confidence intervals on each of these coefficients. Compare the estimated bootstrap standard errors with those from the `lm()` function, and also compare your bootstrap confidence intervals to those produced by the `confint()` function.
+
+```{r}
+# Function to perform regression and return coefficients
+regression <- function(data, indices) {
+  sample_data <- data[indices, ]
+  lm_model <- lm(Nitrogen ~ Forest + Agr + ComIndl, data = sample_data)
+  coef(lm_model)
+}
+
+# Number of bootstrap samples
+B <- 1000
+
+# Perform bootstrap resampling
+bootstrap_results <- replicate(B, expr = regression(ny, sample(nrow(ny), nrow(ny), replace = TRUE)))
+
+# Transpose results
+bootstrap_results <- t(bootstrap_results)
+
+# Original linear model
+original_lm <- lm(Nitrogen ~ Forest + Agr + ComIndl, data = ny)
+
+# Estimated coefficients from the original model
+coefficients_original <- coef(original_lm)
+
+# Bias calculation
+bias <- colMeans(bootstrap_results) - coefficients_original
+
+# Estimated standard errors from bootstrap
+bootstrap_standard_errors <- apply(bootstrap_results, 2, sd)
+
+# Calculate confidence intervals using confint() function
+lm_conf_intervals <- confint(original_lm)
+
+# Standard errors from the lm() function
+lm_standard_errors <- summary(original_lm)$coef[, "Std. Error"]
+
+# Create percentile confidence intervals
+percentile_conf_intervals <- t(sapply(1:3, function(i) quantile(bootstrap_results[, i], c(0.025, 0.975))))
+
+# BCa confidence intervals using boot.ci() function
+bca_conf_intervals <- t(sapply(1:3, function(i) {
+  boot_object <- boot(bootstrap_results[, i], function(x, indices) mean(x[indices]), R = B)
+  boot_ci <- boot.ci(boot_object, type = "bca")$bca[4:5]
+}))
+
+cat("Parameters:\n", names(coefficients_original), "\n\n")
+cat("Bias for coefficients:\n", bias, "\n\n")
+cat("Standard errors from the lm() function:\n", lm_standard_errors, "\n\n")
+cat("Estimated standard errors from bootstrap:\n", bootstrap_standard_errors, "\n\n")
+cat("Confidence intervals from confint() function:\n", lm_conf_intervals, "\n\n")
+cat("Percentile confidence intervals:\n", percentile_conf_intervals, "\n\n")
+cat("BCa confidence intervals using boot.ci() function:\n", bca_conf_intervals, "\n\n")
+```
+
+### Regression: Resampling Residuals
+Use the bootstrap procedure by *resampling residuals* with the model using `Nitrogen` as the response variable and `Forest` and `ComIndl` as two independent variables. 
+
+Estimate the bias and standard error of the two partial regression coefficients, and further create percentile and BCa confidence intervals on these two coefficients. Compare the estimated bootstrap standard errors to those produced by the `lm()` function. Further compare your boostrap confidence intervals on the regression coefficients to those produced by the `confint()` function.
+
+```{r}
+# Function to perform regression and return coefficients after residual resampling
+residual_regression <- function(data, indices) {
+  lm_model <- lm(Nitrogen ~ Forest + ComIndl, data = data)
+  residuals <- residuals(lm_model)
+  sample_residuals <- residuals[indices]
+  y_new <- fitted(lm_model) + sample_residuals
+  new_model <- lm(y_new ~ Forest + ComIndl, data = data)
+  coef(new_model)
+}
+
+# Number of bootstrap samples
+B_resid <- 1000
+
+# Perform bootstrap resampling of residuals
+bootstrap_results_resid <- replicate(B_resid, expr = residual_regression(ny, sample(nrow(ny), nrow(ny), replace = TRUE)))
+
+# Transpose results
+bootstrap_results_resid <- t(bootstrap_results_resid)
+
+# Original linear model
+original_lm_resid <- lm(Nitrogen ~ Forest + ComIndl, data = ny)
+
+# Estimated coefficients from the original model
+coefficients_original_resid <- coef(original_lm_resid)
+
+# Bias calculation
+bias_resid <- colMeans(bootstrap_results_resid) - coefficients_original_resid
+
+# Estimated standard errors from bootstrap
+bootstrap_standard_errors_resid <- apply(bootstrap_results_resid, 2, sd)
+
+# Calculate confidence intervals using confint() function
+lm_conf_intervals_resid <- confint(original_lm_resid)
+
+# Standard errors from the lm() function
+lm_standard_errors_resid <- summary(original_lm_resid)$coef[, "Std. Error"]
+
+# Percentile confidence intervals
+percentile_conf_intervals_resid <- t(sapply(1:2, function(i) quantile(bootstrap_results_resid[, i], c(0.025, 0.975))))
+
+# BCa confidence intervals using boot.ci() function
+bca_conf_intervals_resid <- t(sapply(1:2, function(i) {
+  boot_object_resid <- boot(bootstrap_results_resid[, i], function(x, indices) mean(x[indices]), R = B_resid)
+  boot_ci_resid <- boot.ci(boot_object_resid, type = "bca")$bca[4:5]
+}))
+
+# Output results with descriptions
+cat("Bias:\n")
+cat(bias_resid, "\n\n")
+
+cat("Bootstrap Estimated Standard Errors:\n")
+cat("Forest:\t", bootstrap_standard_errors_resid[1], "\n")
+cat("ComIndl:\t", bootstrap_standard_errors_resid[2], "\n\n")
+
+cat("Confidence Intervals using confint() function:\n")
+cat("Forest:\n")
+cat(lm_conf_intervals_resid[1, ], "\n")
+cat("ComIndl:\n")
+cat(lm_conf_intervals_resid[2, ], "\n\n")
+
+cat("Standard Errors from lm() function:\n")
+cat("Forest:\t", lm_standard_errors_resid[1], "\n")
+cat("ComIndl:\t", lm_standard_errors_resid[2], "\n\n")
+
+cat("Percentile Confidence Intervals:\n")
+cat("Forest:\n")
+cat(percentile_conf_intervals_resid[1, ], "\n")
+cat("ComIndl:\n")
+cat(percentile_conf_intervals_resid[2, ], "\n\n")
+
+cat("BCa Confidence Intervals using boot.ci() function:\n")
+cat("Forest:\n")
+cat(bca_conf_intervals_resid[1, ], "\n")
+cat("ComIndl:\n")
+cat(bca_conf_intervals_resid[2, ], "\n")
+```

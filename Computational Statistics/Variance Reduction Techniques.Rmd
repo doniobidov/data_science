@@ -1,0 +1,409 @@
+---
+title: 'MA5761 Homework #5'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+For homework assignments in this course, you will be provided with a knitted R notebook and the .rmd file used to create it. You are *encouraged* (but not required) to use the .rmd file as a template for your solutions.
+
+```{r}
+# Load packages
+library(ggplot2)
+```
+
+## Expected Value of Function from $\chi^2_{10}$ Distribution
+
+Consider the problem of estimating the value of
+
+$$
+\theta=\mathbb{E}\bigl(\log(1+Y)\bigr)=\int_0^\infty\log(1+y)\cdot\frac{1}{768} y^{4}e^{-y/2}\,dy
+$$
+
+when $Y$ has the $\chi^2$ distribution with $\nu=10$ degrees of freedom; note that `dchisq(y, 10)` implements the integrand factor $y^4e^{-y/2}/768$ in the above expression.
+
+You are tasked with estimating the value of $\theta$ using various different Monte Carlo estimators. For each of these methods, you should calculate...
+
+-   the point estimate $\hat\theta$
+-   the estimated variance of the Monte Carlo estimator (up to the factor $1/N$)
+-   the estimated standard error of the Monte Carlo estimator
+-   a large-sample 95% confidence interval on $\theta$
+
+Estimators should be constructed from a sample of a *total* of $N=10^4$ points. 
+
+### Simple Monte Carlo estimator
+
+Use the simple Monte Carlo estimator with $N=10^4$ points sampled from the $\chi^2_{10}$ distribution to estimate this expected value.
+
+```{r}
+set.seed(123)  # Set a random seed for reproducibility
+N <- 10^4  # Total number of samples
+df <- 10  # Degrees of freedom
+
+# Generate N random samples from chi-squared distribution
+Y_samples <- rchisq(N, df = df)
+
+# Calculate the point estimate
+theta_hat_simple <- mean(log(1 + Y_samples))
+
+# Calculate the variance
+var_theta_simple <- var(log(1 + Y_samples))
+
+# Calculate the standard error
+se_theta_simple <- sqrt(var_theta_simple / N)
+
+# Calculate the 95% confidence interval
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+lower_bound_simple <- theta_hat_simple - z * se_theta_simple / sqrt(N)
+upper_bound_simple <- theta_hat_simple + z * se_theta_simple / sqrt(N)
+
+cat("Point Estimate (theta hat):", theta_hat_simple, "\n")
+cat("Estimated Variance:", var_theta_simple, "\n")
+cat("Estimated Standard Error:", se_theta_simple, "\n")
+cat("95% Confidence Interval: [", lower_bound_simple, ", ", upper_bound_simple, "]\n")
+```
+
+### Antithetic Variables
+
+Generate two antithetic samples (each of size $N/2$, for a total of $N$ points in the two samples) from the $\chi^2_{10}$ distribution, and use these to estimate $\theta$. 
+
+```{r}
+set.seed(123)  # Set a random seed for reproducibility
+N <- 10^4  # Total number of samples
+N_half <- N / 2
+df <- 10  # Degrees of freedom
+
+u <- runif(N_half)  # Generate uniform random variables
+
+# Generate N/2 random samples from chi-squared distribution
+Y_1 <- qchisq(u, df = df)
+# Generate N/2 antithetic samples from chi-squared distribution
+Y_2 <- qchisq(1 - u, df = df)
+
+Y_samples_1 <- log(1 + Y_1)
+Y_samples_2 <- log(1 + Y_2)
+
+# Calculate the correlation between Y_samples_1 and Y_samples_2
+correlation <- cor(Y_samples_2, Y_samples_1)
+
+# Combine the two samples
+Y_samples <- 0.5*(Y_samples_1 + Y_samples_2)
+
+# Calculate the point estimate
+theta_hat_antithetic <- mean(Y_samples)
+
+# Calculate the variance
+var_theta_antithetic <- var(Y_samples)
+
+# Calculate the standard error
+se_theta_antithetic <- sd(Y_samples) / sqrt(N_half)
+
+# Calculate the 95% confidence interval
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+lower_bound_antithetic <- theta_hat_antithetic - z * se_theta_antithetic
+upper_bound_antithetic <- theta_hat_antithetic + z * se_theta_antithetic
+
+var_reduc_simple_antithetic <- 100 * (var_theta_simple - var_theta_antithetic) / var_theta_simple
+
+cat("Correlation between Y_samples_1 and Y_samples_2 (antithetic):", correlation, "\n")
+cat("Point Estimate:", theta_hat_antithetic, "\n")
+cat("Estimated Variance:", var_theta_antithetic, "\n")
+cat("Estimated Standard Error:", se_theta_antithetic, "\n")
+cat("95% Confidence Interval: [", lower_bound_antithetic, ", ", upper_bound_antithetic, "]\n")
+cat("Percentage Variance Reduction:", var_reduc_simple_antithetic, "%\n")
+```
+
+### Single Control Variable
+
+It is known that 
+$$\mathbb{E}\left(\sqrt{Y}\right)=\frac{\Gamma(\frac{\nu}{2}+\frac12)}{\Gamma(\frac{\nu}2)}\,\sqrt{2}$$
+when $Y\sim\chi^2_{\nu}$. Note that the $\Gamma$ function is implemented in R with `gamma()`. 
+
+Estimate $\theta$ by sampling from the $\chi^2_{10}$ distribution and using a single control variable $\sqrt{Y}$. Estimate the optimal coefficient attached to the control variable ***without using the lm()*** function. 
+
+```{r}
+set.seed(123)  # Set a random seed for reproducibility
+N <- 10^4  # Total number of samples
+df <- 10  # Degrees of freedom
+
+# Generate N random samples from chi-squared distribution
+Y <- rchisq(N, df = df)
+
+Y_samples <- log(1 + Y)
+Y_control <- sqrt(Y)
+
+# Calculate the expected value of Y_control
+Y_control_ev <- sqrt(2) * gamma(df/2 + 1/2) / gamma(df/2)
+
+# Find the optimal coefficient
+C <- -1*cov(Y_samples, Y_control) / var(Y_control)
+
+Y_samples_control <- Y_samples + C * (Y_control - Y_control_ev)
+
+# Calculate the point estimate of the control variate
+theta_hat_cv <- mean(Y_samples_control)
+
+# Calculate the variance
+var_theta_cv <- var(Y_samples_control)
+
+# Calculate the standard error
+se_theta_cv <- sd(Y_samples_control) / sqrt(N)
+
+# Calculate the 95% confidence interval
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+lower_bound_cv <- theta_hat_cv - z * se_theta_cv
+upper_bound_cv <- theta_hat_cv + z * se_theta_cv
+
+var_reduc_simple_control <- 100 * (var(Y_samples) - var(Y_samples_control)) / var(Y_samples)
+
+cat("Point Estimate:", theta_hat_cv, "\n")
+cat("Optimal Coefficient:", C, "\n")
+cat("Estimated Variance (with control variable):", var_theta_cv, "\n")
+cat("Estimated Standard Error (with control variable):", se_theta_cv, "\n")
+cat("95% Confidence Interval (with control variable): [", lower_bound_cv, ", ", upper_bound_cv, "]\n")
+cat("95% Confidence Interval (with control variable): [", lower_bound_cv, ", ", upper_bound_cv, "]\n")
+cat("Percentage Variance Reduction:", var_reduc_simple_control, "%\n")
+```
+
+### Several Control Variables
+
+In general, it can be shown that
+$$\mathbb{E}\left(Y^k\right)=\frac{\Gamma(\frac{\nu}{2}+k)}{\Gamma(\frac{\nu}2)}\,2^{k}$$
+whenever $Y\sim\chi^2_{\nu}$ and $k>-\nu/2$. 
+
+Estimate $\theta$ by sampling from the $\chi^2_{10}$ distribution and using several control variables: $\sqrt{Y}$, $Y$, and $1/Y$. Here, you *should* use the `lm()` and associated functions to estimate the optimal coefficients on the control variables, the point estimate $\hat\theta$ and the variance $\hat\sigma^2$.
+
+```{r}
+set.seed(123)  # Set a random seed for reproducibility
+N <- 10^4  # Total number of samples
+df <- 10  # Degrees of freedom
+
+# Generate N random samples from chi-squared distribution
+Y <- rchisq(N, df = df)
+
+Y_samples <- log(1 + Y)
+Y_control_1 <- sqrt(Y)
+Y_control_2 <- Y
+Y_control_3 <- 1/Y
+
+# Calculate the expected value of Y_control
+Y_control_1_ev <- sqrt(2) * gamma(df/2 + 1/2) / gamma(df/2)
+Y_control_2_ev <- (2^1) * gamma(df/2 + 1) / gamma(df/2)
+Y_control_3_ev <- (2^-1) * gamma(df/2 - 1) / gamma(df/2)
+
+# Fit the multiple regression with three predictors
+LR3 <- lm(Y_samples ~ Y_control_1 + Y_control_2 + Y_control_3)
+C <- LR3$coeff[2:4]
+C_1 <- -C[1]
+C_2 <- -C[2]
+C_3 <- -C[3]
+
+Y_samples_control <- Y_samples + C_1 * (Y_control_1 - Y_control_1_ev) + C_2 * (Y_control_2 - Y_control_2_ev) + C_3 * (Y_control_3 - Y_control_3_ev)
+
+# Calculate the point estimate of the control variate
+theta_hat_cv <- mean(Y_samples_control)
+df_mu <- data.frame(Y_control_1=Y_control_1_ev, Y_control_2=Y_control_2_ev, Y_control_3=Y_control_3_ev)
+theta_hat_cv_lm <-predict(LR3, df_mu)
+
+# Calculate the variance
+var_theta_cv <- var(Y_samples_control)
+var_theta_cv_lm <- summary(LR3)$sigma^2
+
+# Calculate the standard error
+se_theta_cv_lm <- sqrt(var_theta_cv_lm / N)
+
+# Calculate the 95% confidence interval
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+lower_bound_cv_lm <- theta_hat_cv_lm - z * se_theta_cv_lm
+upper_bound_cv_lm <- theta_hat_cv_lm + z * se_theta_cv_lm
+
+# var_reduc_simple_controls <- 100 * (var(Y_samples) - var_theta_cv) / var(Y_samples)
+var_reduc_simple_controls <- 100 * summary(LR3)$r.squared
+
+cat("Point Estimate:", theta_hat_cv, "\n")
+cat("Point Estimate with lm:", theta_hat_cv_lm, "\n")
+cat("Optimal Coefficients (calculated with lm):", C_1, C_2, C_3, "\n")
+cat("Estimated Variance (with control variables):", var_theta_cv, "\n")
+cat("Estimated Variance (with control variables) with lm:", var_theta_cv_lm, "\n")
+cat("Estimated Standard Error (with control variables):", se_theta_cv_lm, "\n")
+cat("95% Confidence Interval (with control variables): [", lower_bound_cv_lm, ", ", upper_bound_cv_lm, "]\n")
+cat("Percentage Variance Reduction:", var_reduc_simple_controls, "%\n")
+```
+
+### Importance Sampling with the Maximum Principle
+
+Suppose that we wish to use importance sampling, sampling from a $\mathsf{Gamma}(\alpha,\beta)$ distribution. Recall that the *mode*, $\tilde\mu$, of this gamma distribution is given by the equation
+$$
+\tilde\mu=(\alpha-1)\beta
+$$
+
+Use the Maximum Principle to determine the value of $\alpha$ (the *shape* parameter) if we choose to use $\beta=2$ (recall this is the *scale* parameter). Sample from this gamma distribution using importance sampling.
+
+```{r}
+set.seed(123)  # Set a random seed for reproducibility
+N <- 10^4  # Total number of samples
+df <- 10  # Degrees of freedom
+
+# Find mode of g(x)
+g <- function(x) log(1+x) * dchisq(x, df = df) * (x>0)
+gmax <- optimize(g, c(0, 10), maximum = TRUE)
+m <- gmax$maximum
+
+# Find alpha for a fixed beta and mode
+beta <- 2
+alpha = (m / beta) + 1
+
+# Generate N random samples from gamma distribution
+Y <- rgamma(N, shape = alpha, scale = beta)
+Y_samples <- g(Y) / dgamma(Y, shape = alpha, scale = beta)
+
+# Calculate the point estimate
+theta_hat_is <- mean(Y_samples)
+
+# Calculate the variance
+var_theta_is <- var(Y_samples)
+
+# Calculate the standard error
+se_theta_is <- sd(Y_samples) / sqrt(N)
+
+# Calculate the 95% confidence interval
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+lower_bound_is <- theta_hat_is - z * se_theta_is
+upper_bound_is <- theta_hat_is + z * se_theta_is
+
+var_reduc_simple_is <- 100 * (var_theta_simple - var_theta_is) / var_theta_simple
+
+cat("Point Estimate:", theta_hat_is, "\n")
+cat("Estimated Variance (with importance sampling):", var_theta_is, "\n")
+cat("Estimated Standard Error (with importance sampling):", se_theta_is, "\n")
+cat("95% Confidence Interval (with importance sampling): [", lower_bound_is, ", ", upper_bound_is, "]\n")
+cat("Percentage Variance Reduction:", var_reduc_simple_is, "%\n")
+```
+
+### Stratified Importance Sampling
+
+Suppose that we choose to use stratified importance sampling to estimate $\theta$. Particularly, suppose that we split the interval of integration into the two subinterval $(0,8)$ and $(8,\infty)$. Sample from...
+
+- the $\mathsf{Gamma}(\alpha=6.1, \beta=1.6)$ distribution, truncated to the interval $(0,8)$
+- and the $\mathsf{Gamma}(\alpha=5.35, \beta=2)$ distribution, truncated to the interval $(8,\infty)$
+
+Obtain some smaller samples from these two distributions to get variance estimates that allow you to estimate the optimal value of $p$ that minimizes the variance of the stratified importance sampling estimator. Once this initial estimate is made, sample $pN$ points from the first distribution and $(1-p)N$ points from the second distribution. Use these to obtain the point estimate $\hat\theta$ and other requested quantities.
+
+```{r}
+set.seed(123)  # Set a random seed for reproducibility
+
+# Function for the truncated gamma density
+dgamma_trunc <- function(x, shape, scale, a, b) {
+  p <- pgamma(b, shape, 1/scale) - pgamma(a, shape, 1/scale)
+  return(dgamma(x, shape, 1/scale) / p * (a<=x & x<=b))
+}
+
+# Function for the random sample generation
+rgamma_trunc <- function(n, shape, scale, a, b) {
+  p <- pgamma(c(a, b), shape, 1/scale)
+  u <- runif(n, p[1], p[2])
+  return(qgamma(u, shape, 1/scale))
+}
+
+# Get initial guesses from smaller samples
+df <- 10  # Degrees of freedom
+g <- function(x) log(1 + x) * dchisq(x, df = df)
+
+f1 <- function(x) dgamma_trunc(x, 6.1, 1.6, 0, 8)
+f2 <- function(x) dgamma_trunc(x, 5.35, 2, 8, Inf)
+
+x1 <- rgamma_trunc(1000, 6.1, 1.6, 0, 8)
+gx1 <- g(x1) / f1(x1)
+v1 <- var(gx1)
+
+x2 <- rgamma_trunc(1000, 5.35, 2, 8, Inf)
+gx2 <- g(x2) / f2(x2)
+v2 <- var(gx2)
+
+# Find optimal p
+p <- sd(gx1) / (sd(gx1) + sd(gx2))
+
+# Put everything into one single estimator
+N <- 10^4 # Total number of samples
+p <- round(p, 3) # Make sure pN and (1-p)N are whole numbers
+
+x1 <- rgamma_trunc(p*N, 6.1, 1.6, 0, 8)
+x2 <- rgamma_trunc((1-p)*N, 5.35, 2, 8, Inf)
+
+gx1 <- g(x1) / f1(x1)
+gx2 <- g(x2) / f2(x2)
+
+# Calculate the point of estimate
+mc_est <- mean(gx1) + mean(gx2)
+
+# Calculate the variance and the standard error
+mc_var <- var(gx1)/p + var(gx2)/(1-p)
+mc_stderr <- sqrt(mc_var)/sqrt(N)
+
+# Calculate the 95% confidence interval
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+lower_bound_mc <- mc_est - z * mc_stderr
+upper_bound_mc <- mc_est + z * mc_stderr
+
+var_reduc_simple_mc <- 100 * (var_theta_simple - mc_var) / var_theta_simple
+
+cat("Point Estimate:", mc_est, "\n")
+cat("Estimated Variance (with stratified sampling):", mc_var, "\n")
+cat("Estimated Standard Error (with stratified sampling):", mc_stderr, "\n")
+cat("95% Confidence Interval (with stratified sampling): [", lower_bound_mc, ", ", upper_bound_mc, "]\n")
+cat("Percentage Variance Reduction:", var_reduc_simple_mc, "%\n")
+```
+
+### Comparisons
+
+Create a table of all of the quantities from your above estimators. The columns of this table should include...
+
+- a short descriptive name of the estimator used
+- the value of the point estimate $\hat\theta$
+- the estimated variance of the estimator (after removing the $1/N$ factor)
+- the estimated % reduction in variance from the simple Monte Carlo estimator (so this should be 0 for the row corresponding to the simple Monte Carlo estimator)
+- the estimated standard error of the estimator
+- the large-sample 95% confidence interval on $\theta$
+
+Make a set of comments comparing these different methods. Which one appears to achieve the greatest reduction in variance?
+
+```{r}
+# Data frame with the estimator results
+estimators <- c("Simple Monte Carlo", "Antithetic Variables", "Single Control Variable",
+                "Several Control Variables", "Importance Sampling", "Stratified Importance Sampling")
+
+point_estimates <- c(theta_hat_simple, theta_hat_antithetic, theta_hat_cv, theta_hat_cv_lm, theta_hat_is, mc_est)
+
+variances <- c(var_theta_simple, var_theta_antithetic, var_theta_cv, var_theta_cv_lm, var_theta_is, mc_var)
+
+variance_reduction <- c(0, var_reduc_simple_antithetic, var_reduc_simple_control, var_reduc_simple_controls, var_reduc_simple_is, var_reduc_simple_mc)
+
+standard_errors <- c(se_theta_simple, se_theta_antithetic, se_theta_cv, se_theta_cv_lm, se_theta_is, mc_stderr)
+
+confidence_intervals <- c(paste("[", round(lower_bound_simple, 5), ",", round(upper_bound_simple, 5), "]"),
+                         paste("[", round(lower_bound_antithetic, 5), ",", round(upper_bound_antithetic, 5), "]"),
+                         paste("[", round(lower_bound_cv, 5), ",", round(upper_bound_cv, 5), "]"),
+                         paste("[", round(lower_bound_cv_lm, 5), ",", round(upper_bound_cv_lm, 5), "]"),
+                         paste("[", round(lower_bound_is, 5), ",", round(upper_bound_is, 5), "]"),
+                         paste("[", round(lower_bound_mc, 5), ",", round(upper_bound_mc, 5), "]"))
+
+estimator_table <- data.frame(Estimator = estimators, Point_Estimate = point_estimates, Estimator_Variance = variances,
+                              Variance_Reduction = variance_reduction, Standard_Error = standard_errors,
+                              Confidence_Interval = confidence_intervals)
+
+# Print the table
+knitr::kable(estimator_table, format = "markdown", align = "r")
+```
+
+All the variance reduction techniques did a great job (around 99% reduction each). The highest variance reduction was achieved by using several control variables.

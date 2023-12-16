@@ -1,0 +1,418 @@
+---
+title: 'MA5761 Homework #3'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+For homework assignments in this course, you will be provided with a knitted R notebook and the .rmd file used to create it. You are *encouraged* (but not required) to use the .rmd file as a template for your solutions.
+
+```{r}
+# Load packages
+library(ggplot2)
+```
+
+## Kumaraswamy Distribution
+The beta distribution is commonly used, but one drawback is that it does not have a nice closed-form expression for its cdf, making sampling from it somewhat difficult. 
+
+Alternatively, the ***Kumaraswamay distribution*** is a probability distribution with the pdf
+\[f(x)=\alpha\beta x^{\alpha-1}(1-x^\alpha)^{\beta-1},\quad 0<x<1\]
+where $\alpha>0$ and $\beta>0$ are two *shape parameters*. 
+
+It it can be shown that the cdf of this distribution is
+\[F(x)=1-(1-x^\alpha)^\beta,\quad 0<x<1\]
+
+Write functions `dkumara`, `pkumara`, `qkumara`, and `rkumara` which implement the four standard R functions for a family of probability distributions (pdf, cdf, quantile function, and random sample generation). Create a sample of $n=10^4$ observations from this distribution with $\alpha=1.5$ and $\beta=4.5$, generate a density histogram of this sample, and overlay the theoretical pdf on top of it.
+
+```{r}
+# The pdf function for Kumaraswamay distribution
+dkumara <- function(x, alpha, beta) {
+  ifelse(x > 0 & x < 1, alpha * beta * x^(alpha - 1) * (1 - x^alpha)^(beta - 1), 0)
+}
+
+# The cdf function for Kumaraswamay distribution
+pkumara <- function(x, alpha, beta) {
+  ifelse(x > 0 & x < 1, 1 - (1 - x^alpha)^beta, 0)
+}
+
+# The quantile function for Kumaraswamay distribution
+qkumara <- function(p, alpha, beta) {
+  ifelse(p >= 0 & p <= 1, (1 - (1 - p)^(1/beta))^(1/alpha), NA)
+}
+
+# A function to generate random samples from Kumaraswamay distribution
+rkumara <- function(n, alpha, beta) {
+  p <- runif(n)
+  qkumara(p, alpha, beta)
+}
+```
+
+```{r}
+# Set the random seed for reproducibility
+set.seed(5761)
+
+# Set the parameters
+alpha <- 1.5
+beta <- 4.5
+n <- 10^4
+
+# Generate a random sample from Kumaraswamay distribution
+kumara_sample <- rkumara(n, alpha, beta)
+
+# Create a data frame for the sample
+kumara_sample <- data.frame(x = kumara_sample)
+
+# Create a plot for the density histogram and PDF curve
+ggplot(kumara_sample, aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  geom_function(
+    fun = function(x) dkumara(x, alpha, beta),
+    color = "red",
+    size = 1.5
+  ) +
+  labs(
+    title = "Density histogram vs PDF curve of Kumaraswamay distribution",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+## Beta Distribution
+
+Consider the problem of sampling from the $\mathsf{Beta}(1.5,4.5)$ distribution, using rejection sampling with the Kumaraswamy distribution as a proposal distribution.
+
+Create a function, `f`, which is the pdf of this target distribution. 
+Experiment with different values of $\alpha$ and $\beta$ in the proposal (Kumaraswamy) distribution to try and find a decent "match" to the target density. Create curves of both the target density and the proposal density on the same axes, and also a plot of the ratio $f(x)/g(x)$. 
+
+You need not chronicle all attempts made, but find a set of parameters $\alpha$ and $\beta$ for the proposal distribution which ensures $M=\max_{x\in(0,1)}f(x)/g(x)\le 1.1$. \textsc{Hint}: Let $\beta=4.5$, and search for values of $\alpha$ that are near 1.5. 
+
+Once you have settled on a proposal distribution, estimate $M$ with the `optimize` function, and then plot $f(x)$ and $M\cdot g(x)$ on the same axes to visually verify you have an envelope to the target density.
+
+Finally, generate a sample of size $10^4$ from the target distribution using rejection sampling. Report the percentage of points that were accepted, and verify that this is "close" to the theoretical acceptance probability of $1/M$. Create a density histogram of your sample, and overlay the theoretical target (beta) density on top of it.
+
+```{r}
+# Define the target PDF (Beta distribution)
+f <- function(x) dbeta(x, shape1 = 1.5, shape2 = 4.5)
+
+# Define the proposal PDF (Kumaraswamy distribution)
+g <- function(x, alpha, beta) dkumara(x, alpha, beta)
+
+# Function to calculate the ratio f(x)/g(x)
+ratio_fg <- function(x, alpha, beta) {
+  f(x) / g(x, alpha, beta)
+}
+```
+
+Now, let's select parameters' values for the proposal distribution
+
+```{r}
+# Set beta parameter for the proposal distribution
+beta_proposal <- 4.5
+
+# Set alpha parameter for the proposal distribution
+alpha_proposal <- 1.25
+
+# Create a sequence of x values
+x_values <- seq(0, 1, by = 0.01)
+
+# Calculate the corresponding values of f(x), g(x), and f(x)/g(x)
+f_values <- sapply(x_values, f)
+g_values <- sapply(x_values, g, alpha = alpha_proposal, beta = beta_proposal)
+ratio_values <- sapply(x_values, ratio_fg, alpha = alpha_proposal, beta = beta_proposal)
+
+# Create a data frame
+plot_data <- data.frame(x = x_values, f = f_values, g = g_values, ratio = ratio_values)
+
+# Create a plot of the target density vs proposal density
+ggplot(plot_data, aes(x = x)) +
+  geom_line(aes(y = f, linetype = "Target", color = "Target"), size = 1.25) +
+  geom_line(aes(y = g, linetype = "Proposal", color = "Proposal"), size = 1.25) +
+  labs(
+    title = "Target vs. Proposal Density",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+  scale_linetype_manual(values = c("solid", "solid"), name = "Density Curves") +
+  scale_color_manual(values = c("blue", "red"), name = "Density Curves")
+
+# Create a plot of the ratio f(x)/g(x)
+ggplot(plot_data, aes(x = x, y = ratio)) +
+  geom_line(color = "blue", size = 1.5) +
+  labs(
+    title = "Ratio of Target Density to Proposal Density",
+    x = "x",
+    y = "Ratio"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+  ylim(0.6, 1.10)
+```
+
+```{r}
+# Find the maximum ratio f(x)/g(x)
+  M <- optimize(ratio_fg, interval = c(0, 1), alpha = alpha_proposal, beta = beta_proposal, maximum = TRUE)
+```
+
+```{r}
+# Create a sequence of x values
+x_values <- seq(0, 1, by = 0.01)
+
+# Calculate the corresponding values of f(x) and M⋅g(x)
+f_values <- sapply(x_values, f)
+scaled_g_values <- M$objective * sapply(x_values, g, alpha = alpha_proposal, beta = beta_proposal)
+
+# Create a data frame
+plot_data <- data.frame(x = x_values, f = f_values, mg = scaled_g_values)
+
+# Plot f(x) vs M⋅g(x)
+ggplot(plot_data, aes(x = x)) +
+  geom_line(aes(y = f, linetype = "f(x)", color = "f(x)"), size = 1.25) +
+  geom_line(aes(y = mg, linetype = "Mxg(x)", color = "Mxg(x)"), size = 1.25) +
+  labs(
+    title = "f(x) vs. Mxg(x)",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16)) +
+  scale_linetype_manual(values = c("solid", "solid"), name = "Density Curves") +
+  scale_color_manual(values = c("blue", "red"), name = "Density Curves")
+```
+
+```{r}
+# Set the sample size
+sample_size <- 10^4
+
+# Initialize variables to store accepted and rejected samples
+accepted_samples <- c()
+rejected_samples <- c()
+
+# Perform rejection sampling
+while (length(accepted_samples) < sample_size) {
+  # Generate a random value from the proposal distribution
+  y <- rkumara(1, alpha = alpha_proposal, beta = beta_proposal)
+  
+  # Generate a random number from the uniform distribution
+  u <- runif(1)
+  
+  # Calculate the acceptance probability
+  acceptance_prob <- f(y) / (M$objective * g(y, alpha = alpha_proposal, beta = beta_proposal))
+  
+  if (u < acceptance_prob) {
+    # Accept the sample
+    accepted_samples <- c(accepted_samples, y)
+  } else {
+    # Reject the sample
+    rejected_samples <- c(rejected_samples, y)
+  }
+}
+
+# Calculate the percentage of accepted samples
+percentage_accepted <- length(accepted_samples) / (length(accepted_samples) + length(rejected_samples)) * 100
+
+cat("Percentage of accepted samples:", percentage_accepted, "%\n")
+cat("Theoretical acceptance probability (1/M):", 1/M$objective, "\n")
+
+# Create a data frame for the accepted samples
+accepted_samples <- data.frame(x = accepted_samples)
+```
+
+```{r}
+# Create a density histogram of the accepted samples
+ggplot(accepted_samples, aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  geom_function(
+    fun = function(x) dbeta(x, shape1 = 1.5, shape2 = 4.5),
+    color = "red",
+    size = 1.5
+  ) +
+  labs(
+    title = "Density Histogram of the Generated Samples vs Theoretical Beta Density",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+## Epanechnikov Distribution
+
+The rescaled Epanechnikov kernel is a symmetric density function 
+\[f_e(x)=\tfrac34(1-x^2),\quad \lvert x\rvert\le 1\]
+Devroye and Gyorfi give the following algorithm for simulation from this distribution: 
+
+1. Generate iid $U_1,U_2,U_3\sim\mathsf{Uniform}(-1,1)$. 
+2. If $|U_3|\ge|U_2|$ and $|U_3|\ge|U_1|$, deliver $U_2$; otherwise deliver $U_3$. 
+
+Write a function which implements the density function of this distribution, and another function which generates random variates from $f_e$. Construct a density histogram of a large sample generated from this distribution, and overlay the theortical density on top of it.
+
+```{r}
+# PDF of the rescaled Epanechnikov kernel
+d_epanech <- function(x) {
+  ifelse(abs(x) <= 1, 3/4 * (1 - x^2), 0)
+}
+```
+
+```{r}
+# Function to generate random variables
+r_epanech <- function(n) {
+  U1 <- runif(n, min = -1, max = 1)
+  U2 <- runif(n, min = -1, max = 1)
+  U3 <- runif(n, min = -1, max = 1)
+  
+  # Decide which value to deliver based on the conditions
+  values <- ifelse(abs(U3) >= abs(U2) & abs(U3) >= abs(U1), U2, U3)
+  return(values)
+}
+```
+
+```{r}
+# Set the sample size
+sample_size <- 10^4
+
+# Generate a sample from the rescaled Epanechnikov kernel distribution
+epanechnikov_sample <- r_epanech(sample_size)
+
+# Create a data frame
+epanechnikov_sample <- data.frame(x = epanechnikov_sample)
+
+# Create a sequence of x values for the theoretical density
+x_values <- seq(-1, 1, by = 0.01)
+theoretical_density <- d_epanech(x_values)
+
+# Plot a density histogram vs the theoretical density
+ggplot(epanechnikov_sample, aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  geom_line(data = data.frame(x = x_values, density = theoretical_density), aes(x = x, y = density), color = "red", size = 1.5) +
+  labs(
+    title = "Density Histogram of Rescaled Epanechnikov Kernel vs the Theoretical Density",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+## Normal Distribution
+Create a function `my_rnorm` which generates a random sample of size $n$ from a normal distribution. This function should implement the Box-Muller transformation described in the notes, and then perform a scale and location transformation. 
+
+Check your work by generating a sample with your function (you pick $\mu$ and $\sigma$) and overlaying the theortical density (implemented with `dnorm`) on top of it.
+
+```{r}
+# Function to generate random sample from a normal distribution using Box-Muller
+my_rnorm <- function(n, mean = 0, sd = 1) {
+  # Check if n is even
+  if (n %% 2 != 0) {
+    stop("Error")
+  }
+  
+  u1 <- runif(n / 2)
+  u2 <- runif(n / 2)
+  x1 <- sqrt(-2 * log(u1)) * cos(2 * pi * u2)
+  x2 <- sqrt(-2 * log(u1)) * sin(2 * pi * u2)
+  
+  # Apply scale and location transformation
+  sample <- c(x1, x2) * sd + mean
+  
+  return(sample)
+}
+```
+
+```{r}
+# Set the sample size
+sample_size <- 10000
+
+# Generate a sample from a normal distribution with mean = 2 and sd = 1
+mu <- 2
+sigma <- 1
+sample <- my_rnorm(sample_size, mean = mu, sd = sigma)
+
+# Create a sequence of x values for the theoretical density
+x_values <- seq(mu - 4 * sigma, mu + 4 * sigma, by = 0.01)
+theoretical_density <- dnorm(x_values, mean = mu, sd = sigma)
+
+# Plot a density histogram vs the theoretical density
+ggplot(data.frame(x = sample), aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  geom_line(data = data.frame(x = x_values, density = theoretical_density), aes(x = x, y = density), color = "red", size = 1.5) +
+  labs(
+    title = "Density Histogram of Generated Sample vs Theoretical Normal Density",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+## Student's *t* (Non-central) Distribution
+Recall that Student's *t* distribution is defined as the probability distribution of 
+\[\frac{Z+\delta}{\sqrt{W/\nu}}\]
+where $Z$ has a standard normal distribution and $W$ has a $\chi^2$ distribution with $\nu$ degrees of freedom. Here, $\delta$ is called a *non-centrality parameter*. When $\delta=0$, the distribution is simply called "Student's *t*"; if $\delta\ne0$, the distribution is said to be non-central.
+
+Write a function `my_rt` which generates a sample from Student's *t* distribution using the above definition. This function should have the arguments `n` (the sample size), `df` (the degrees of freedom), and `ncp` (the non-centrality parameter, with a default value of 0). Your function should call functions like `my_rnorm` and `my_rchisq` which also implement random sample generation from the normal distribution and $\chi^2$ distribution. 
+
+Use your function to generate a sample of size $10^4$ from the non-central *t* distribution with 20 degrees of freedom and a non-centrality parameter of -2. Create a density histogram of your sample, and overlay the theoretical density (implemented from R's `dt` function) on top of this.
+
+```{r}
+my_rchisq <- function(n, df) {
+  rnorm_values <- my_rnorm(n * df)
+  squared_values <- rnorm_values^2
+  chi_squared_values <- rowSums(matrix(squared_values, nrow = n))
+  return(chi_squared_values)
+}
+```
+
+```{r}
+# Function to generate random samples from non-central Student's t distribution
+my_rt <- function(n, df, ncp = 0) {
+  if (df <= 0) {
+    stop("Error")
+  }
+  
+  # Generate standard normal random variables
+  z <- my_rnorm(n)
+  
+  # Generate chi-squared random variables
+  w <- my_rchisq(n, df)
+  
+  # Calculate the t random variables
+  t <- (z + ncp) / sqrt(w / df)
+  
+  return(t)
+}
+```
+
+```{r}
+# Set the sample size and parameters
+sample_size <- 10^4
+df <- 20
+non_central_param <- -2
+
+# Generate a sample from the non-central t distribution
+t_sample <- my_rt(sample_size, df, non_central_param)
+
+# Create a sequence of x values for the theoretical density
+x_values <- seq(-10, 8, by = 0.01)
+theoretical_density <- dt(x_values, df = df, ncp = non_central_param)
+
+# Plot a density histogram vs the theoretical density
+ggplot(data.frame(x = t_sample), aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  geom_line(data = data.frame(x = x_values, density = theoretical_density), aes(x = x, y = density), color = "red", size = 1.5) +
+  labs(
+    title = "Density Histogram of Generated t Sample vs Theoretical Density",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```

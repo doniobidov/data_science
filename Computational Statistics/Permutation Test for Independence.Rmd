@@ -1,0 +1,694 @@
+---
+title: 'MA5761 Final Project'
+author: "Doni Obidov"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE, prompt=TRUE, echo=FALSE, purl=FALSE}
+knitr::opts_chunk$set(echo=TRUE, prompt = TRUE, comment=NA, error=TRUE, autodep=TRUE, 
+                      fig.align='center', fig.show='hold', out.width = '60%')
+```
+
+# Permutation tests to assess independence
+
+In this notebook we will explore independence between two variables using permutation test. Specifically, we will compare three different tests based on permutation:
+
+1. Permutation test to compare the **absolute maximum difference** between **joint ECDF** of two variables to the **product of marginal ECDFs**.
+2. Permutation test to compare the **RMSE** between **joint ECDF** of two variables and the **product of marginal ECDFs**.
+3. Permutation test based on **correlation distance** that we covered in class.
+
+```{r}
+# Load the packages
+# install.packages("carData")
+library(carData)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+# Load the datasets
+data("Salaries")
+```
+
+# Exploratory data analysis
+
+The `Salaries` dataset from the `carData` package in R contains information on the academic salaries of professors in a U.S. college for the academic year 2008-09. The data was collected as part of an ongoing effort by the college administration to monitor salary differences between male and female faculty members.
+
+The dataset consists of 397 observations (rows) and 6 variables (columns):
+
+1. **rank**: Categorical variable indicating the rank of professors, with three levels: AssocProf (Associate Professor), AsstProf (Assistant Professor), and Prof (Professor).
+2. **discipline**: Categorical variable categorizing departments into 'A' (theoretical departments) or 'B' (applied departments).
+3. **yrs.since.phd**: Numeric variable representing the number of years since professors obtained their PhDs.
+4. **yrs.service**: Numeric variable indicating the number of years of service.
+5. **sex**: Categorical variable indicating the gender of professors, with two levels: Female and Male.
+6. **salary**: Numeric variable representing the nine-month salary of professors in dollars.
+
+```{r}
+# View the structure of the Salaries dataset
+str(Salaries)
+```
+
+We are only interested in salaries. We will simulate two other variables based on the observed salaries: **height** and **tax**. The simulated data will help us determine the true relationship between our variables, enabling us to assess our tests correctly. Let's plot the histogram of the salaries. It appears to be unimodal with right skewness.
+
+```{r}
+# Create a histogram of salaries
+ggplot(Salaries, aes(x = salary)) +
+  geom_histogram(binwidth = 2000, fill = "skyblue", color = "black") +
+  labs(title = "Histogram of Salaries", x = "Salary ($)", y = "Frequency") +
+  theme_minimal()
+```
+
+# Simulating new variables
+
+## Height
+
+Initially, we simulate professors' heights, which are independent of salaries or any other variable. These heights are generated randomly, following a **Gaussian (mean = 175, sd = 6)** distribution for male professors, and a **Gaussian (mean = 163, sd = 4)** distribution for female professors.
+
+```{r}
+# Add a new column 'height_cm'
+Salaries <- Salaries %>%
+  mutate(
+    height_cm = ifelse(sex == "Male", rnorm(n = nrow(Salaries), mean = 175, sd = 6),
+                       rnorm(n = nrow(Salaries), mean = 163, sd = 4))
+  )
+```
+
+We can visualize the generated heights to confirm the distributions.
+
+```{r}
+# Plot histograms of height_cm for males and females
+ggplot(Salaries, aes(x = height_cm, fill = sex)) +
+  geom_histogram(binwidth = 2, position = "dodge", color = "black", alpha = 0.7) +
+  labs(title = "Height Distribution by Gender", x = "Height (cm)", y = "Frequency") +
+  theme_minimal()
+```
+
+## Tax
+
+```{r}
+# Find the maximum salary
+print("The highest observed salary:")
+print(max(Salaries$salary))
+```
+
+Let's generate a dependent variable. We will calculate taxes based on salaries using the following taxation brackets:
+
+| Income Bracket       | Tax Rate |
+|----------------------|----------|
+| 1st 50,000           | 10%      |
+| 2nd 50,000           | 15%      |
+| 3rd 50,000           | 20%      |
+| 4th 50,000           | 25%      |
+| Rest                 | 30%      |
+
+```{r}
+# Function to calculate tax based on income
+calculate_tax <- function(income) {
+  tax_10 <- min(income, 50000) * 0.10
+  tax_15 <- min(max(income - 50000, 0), 50000) * 0.15
+  tax_20 <- min(max(income - 100000, 0), 50000) * 0.20
+  tax_25 <- min(max(income - 150000, 0), 50000) * 0.25
+  tax_30 <- max(income - 200000, 0) * 0.30
+  
+  total_tax <- tax_10 + tax_15 + tax_20 + tax_25 + tax_30
+  return(total_tax)
+}
+
+# Add a new column 'tax'
+Salaries <- Salaries %>%
+  mutate(
+    tax = sapply(salary, calculate_tax)
+  )
+
+head(Salaries)
+```
+
+We can visualize the histogram of taxes. However, it's challenging to evaluate the dependency between tax and salary solely by comparing the histograms.
+
+```{r}
+# Create histograms for tax and salary side by side
+ggplot(Salaries, aes(x = salary)) +
+  geom_histogram(aes(y = ..density..), fill = "blue", alpha = 0.7, binwidth = 5000) +
+  geom_histogram(data = Salaries, aes(x = tax, y = ..density..), fill = "red", alpha = 0.7, binwidth = 5000) +
+  labs(title = "Histograms of Salary and Tax") +
+  xlab("Amount ($)") +
+  ylab("Density") +
+  theme_minimal() +
+  facet_grid(. ~ ., scales = "free")
+```
+
+# Permutation test: maximum absolute difference
+
+Independence between vectors a and b can be proven by showing that the empirical joint CDF of these vectors is equal to the product of marginal ECDFs:
+
+$$ \text{ECDF}(X, Y) = \text{ECDF}(X) \times \text{ECDF}(Y) $$
+
+To assess the equality between the left and right sides of this equation, we can calculate the maximum absolute differences:
+
+$$ \text{Max Absolute Difference} = \max \left| \text{ECDF}(\mathbf{X}, \mathbf{Y}) - \text{ECDF}(\mathbf{X}) \times \text{ECDF}(\mathbf{Y}) \right| $$
+
+```{r}
+# Rows: x, Columns: y in a sorted order
+empirical_joint_cdf <- function(x, y) {
+  # Sort the vectors
+  sorted_x <- sort(unique(x))
+  sorted_y <- sort(unique(y))
+  
+  # Calculate empirical joint CDF
+  joint_cdf_matrix <- outer(sorted_x, sorted_y, FUN = Vectorize(function(a, b) mean(x <= a & y <= b)))
+  
+  # Set row and column names for the matrix
+  rownames(joint_cdf_matrix) <- sorted_x
+  colnames(joint_cdf_matrix) <- sorted_y
+  
+  return(joint_cdf_matrix)
+}
+
+get_ecdf <- function(x_value, y_value, ecdf_matrix) {
+  cdf_value <- ecdf_matrix[as.character(x_value), as.character(y_value)]
+  return(cdf_value)
+}
+```
+
+```{r}
+# Example of usage
+x <- c(1, 2, 3, 4)
+y <- c(2, 3, 5, 6)
+
+# Calculate empirical joint CDF
+demo_ecdf_matrix <- empirical_joint_cdf(x, y)
+
+cat("The joint ECDF matrix:")
+cat("\n")
+print(demo_ecdf_matrix)
+cat("\n")
+cat("The ecdf(x = 2, y = 4) value is:", get_ecdf(2, 5, demo_ecdf_matrix), "\n")
+```
+
+```{r}
+# Function to get ECDF value for given x, y (for plotting)
+get_ecdf_value <- function(x_value, y_value, ecdf_matrix) {
+  # Get the row and column names
+  row_names <- as.numeric(rownames(ecdf_matrix))
+  col_names <- as.numeric(colnames(ecdf_matrix))
+  
+  # Find the nearest values in the matrix for given x and y
+  closest_x <- ifelse(length(row_names[row_names <= x_value]) > 0, max(row_names[row_names <= x_value]), 0)
+  closest_y <- ifelse(length(col_names[col_names <= y_value]) > 0, max(col_names[col_names <= y_value]), 0)
+  
+  if (!(closest_x %in% row_names) || !(closest_y %in% col_names)) {
+    return(0)
+  }
+  
+  # Get the corresponding ECDF value
+  ecdf_value <- ecdf_matrix[as.character(closest_x), as.character(closest_y)]
+  
+  return(ecdf_value)
+}
+```
+
+```{r}
+# Function to get a product of marginal ECDFs for given x, y (for plotting)
+get_product_of_marginal_ecdf <- function(x_value, y_value, ecdf_matrix) {
+  # Get the row and column names
+  row_names <- as.numeric(rownames(ecdf_matrix))
+  col_names <- as.numeric(colnames(ecdf_matrix))
+  
+  # Find the nearest values in the matrix for the given x and y
+  closest_x <- ifelse(length(row_names[row_names <= x_value]) > 0, max(row_names[row_names <= x_value]), 0)
+  closest_y <- ifelse(length(col_names[col_names <= y_value]) > 0, max(col_names[col_names <= y_value]), 0)
+  
+  if (!(closest_x %in% row_names) || !(closest_y %in% col_names)) {
+    return(0)
+  }
+  
+  # Calculate the marginal ECDFs
+  marginal_x <- which(row_names == closest_x) / length(row_names)
+  marginal_y <- which(col_names == closest_y) / length(col_names)
+  
+  # Return the product of marginal ECDFs
+  return(marginal_x * marginal_y)
+}
+```
+
+```{r}
+# Example usage
+cat("The ecdf(x = 3, y = 4) value is:", get_ecdf_value(3, 4, demo_ecdf_matrix), "\n")
+cat("The ecdf(x = 3) x ecdf(y = 4) is:", get_product_of_marginal_ecdf(3, 4, demo_ecdf_matrix), "\n")
+```
+
+## Assessing the independence between salary and height
+
+```{r}
+# Generate sequences of x and y values
+x_values <- seq(min(Salaries$salary), max(Salaries$salary), by = 500)
+y_values <- seq(min(Salaries$height_cm), max(Salaries$height_cm), by = 0.5)
+
+grid_data <- expand.grid(x = x_values, y = y_values)
+
+# Calculate values of joint ECDF and product of marginal ECDFs
+grid_data$joint_ecdf <- mapply(get_ecdf_value, grid_data$x, grid_data$y,
+                               MoreArgs = list(empirical_joint_cdf(Salaries$salary, Salaries$height_cm)))
+
+grid_data$marginal_ecdfs_product <- mapply(get_product_of_marginal_ecdf, grid_data$x, grid_data$y,
+                                             MoreArgs = list(empirical_joint_cdf(Salaries$salary, Salaries$height_cm)))
+```
+
+```{r}
+# 3D scatterplot for joint ECDF
+plot_ly(grid_data, x = ~x, y = ~y, z = ~joint_ecdf, type = "scatter3d", mode = "markers", 
+        color = ~joint_ecdf, colors = c("blue", "red")) %>%
+  layout(scene = list(xaxis = list(title = "Salary ($)"),
+                      yaxis = list(title = "Height (cm)"),
+                      zaxis = list(title = "Joint ECDF"),
+                      aspectmode = "cube"),
+         title = "3D Scatterplot of Joint ECDF")
+```
+
+```{r}
+# 3D scatterplot of product of marginal ecdfs
+plot_ly(grid_data, x = ~x, y = ~y, z = ~marginal_ecdfs_product, type = "scatter3d", mode = "markers", 
+        color = ~marginal_ecdfs_product, colors = c("blue", "red")) %>%
+  layout(scene = list(xaxis = list(title = "Salary ($)"),
+                      yaxis = list(title = "Height (cm)"),
+                      zaxis = list(title = "Product of marginal ECDFs"),
+                      aspectmode = "cube"),
+         title = "3D scatterplot - Product of marginal ECDFs")
+```
+
+## Assessing the independence between salary and tax
+
+```{r}
+# Generate sequences of x and y values
+x_values <- seq(min(Salaries$salary), max(Salaries$salary), by = 500)
+y_values <- seq(min(Salaries$tax), max(Salaries$tax), by = 500)
+
+grid_data <- expand.grid(x = x_values, y = y_values)
+
+# Calculate values of joint ECDF and product of marginal ECDFs
+grid_data$joint_ecdf <- mapply(get_ecdf_value, grid_data$x, grid_data$y,
+                               MoreArgs = list(empirical_joint_cdf(Salaries$salary, Salaries$tax)))
+
+grid_data$marginal_ecdfs_product <- mapply(get_product_of_marginal_ecdf, grid_data$x, grid_data$y,
+                                             MoreArgs = list(empirical_joint_cdf(Salaries$salary, Salaries$tax)))
+```
+
+```{r}
+# 3D scatterplot for joint ECDF
+plot_ly(grid_data, x = ~x, y = ~y, z = ~joint_ecdf, type = "scatter3d", mode = "markers", 
+        color = ~joint_ecdf, colors = c("blue", "red")) %>%
+  layout(scene = list(xaxis = list(title = "Salary ($)"),
+                      yaxis = list(title = "Tax ($)"),
+                      zaxis = list(title = "Joint ECDF"),
+                      aspectmode = "cube"),
+         title = "3D Scatterplot of Joint ECDF")
+```
+
+```{r}
+# 3D scatterplot of product of marginal ecdfs
+plot_ly(grid_data, x = ~x, y = ~y, z = ~marginal_ecdfs_product, type = "scatter3d", mode = "markers", 
+        color = ~marginal_ecdfs_product, colors = c("blue", "red")) %>%
+  layout(scene = list(xaxis = list(title = "Salary ($)"),
+                      yaxis = list(title = "Tax ($)"),
+                      zaxis = list(title = "Product of marginal ECDFs"),
+                      aspectmode = "cube"),
+         title = "3D scatterplot - Product of marginal ECDFs")
+```
+
+```{r}
+calculate_test_statistic <- function(joint_ecdf) {
+  num_rows <- nrow(joint_ecdf)
+  num_cols <- ncol(joint_ecdf)
+  
+  statistic_matrix <- matrix(NA, nrow = num_rows, ncol = num_cols)
+  
+  for (i in 1:num_rows) {
+    for (j in 1:num_cols) {
+      statistic_matrix[i, j] <- joint_ecdf[i, j] - (i * j) / (num_rows * num_cols)
+    }
+  }
+  
+  return(max(abs(statistic_matrix)))
+}
+```
+
+```{r}
+calculate_test_statistic(demo_ecdf_matrix)
+```
+
+```{r}
+perm_test_for_independence <- function(vector_1, vector_2, num_permutations, alpha = 0.05) {
+  # Calculate point estimate
+  point_estimate <- calculate_test_statistic(empirical_joint_cdf(vector_1, vector_2))
+  
+  # Initialize vector to store permuted test statistics
+  perm_test_statistics <- numeric(num_permutations)
+  
+  for (i in 1:num_permutations) {
+    # Randomly shuffle vector_2
+    perm_vector_2 <- sample(vector_2)
+    
+    # Calculate test statistic for permuted vector_2
+    perm_test_statistic <- calculate_test_statistic(empirical_joint_cdf(vector_1, perm_vector_2))
+    perm_test_statistics[i] <- perm_test_statistic
+  }
+  
+  # Calculate p-value
+  p_value <- mean(perm_test_statistics >= point_estimate)
+  
+  # Plot histogram
+  histogram <- ggplot(data.frame(perm_test_statistics), aes(x = perm_test_statistics)) +
+    geom_histogram(binwidth = 0.005, fill = "skyblue", color = "black", 
+                   aes(y = after_stat(density)), 
+                   breaks = seq(min(perm_test_statistics), max(perm_test_statistics), by = 0.005)) +
+    labs(title = "Histogram of Permuted Test Statistics", x = "Permuted Test Statistics", y = "Density") +
+    geom_vline(aes(xintercept = point_estimate, color = "Observed point"),
+               linetype = "dashed", size = 1, show.legend = TRUE) +
+    scale_x_continuous(limits = c(min(point_estimate, min(perm_test_statistics)), max(point_estimate, max(perm_test_statistics)))) +
+    scale_color_manual(name = "Legend", values = c("Observed point" = "red")) +
+    theme_minimal()
+  
+  # Display the histogram
+  print(histogram)
+  
+  cat("\n")
+  cat("The observed point is:", round(point_estimate, 4), "\n")
+  cat("The p-value is:", round(p_value, 4), "\n")
+  if (p_value < alpha) {
+  print("The variables are dependent")
+  } else {
+    print("The variables are independent")
+  }
+  
+  # Return p-value
+  return(round(p_value, 4))
+}
+```
+
+```{r, eval=FALSE}
+perm_test_for_independence(Salaries$salary, Salaries$height_cm, 50)
+```
+
+```{r, eval=FALSE}
+perm_test_for_independence(Salaries$salary, Salaries$tax, 50)
+```
+
+# Permutation test: RMSE
+
+The previous test statistic relied on an outlier, rendering it non-robust in situations where outliers arise from noise or errors. To circumvent this issue, a direct comparison between the Root Mean Squared Error (RMSE) of the joint Empirical Cumulative Distribution Function (ECDF) of two variables and the product of their marginal ECDFs can be performed.
+
+$$ \text{RMSE} = \sqrt{\text{mean}\left(\left(\text{ECDF}(X, Y) - \text{ECDF}(X) \times \text{ECDF}(Y)\right)^2\right)} $$
+
+```{r}
+# Function to calculate the RMSE test statistic
+RMSE_test_statistic <- function(joint_ecdf) {
+  num_rows <- nrow(joint_ecdf)
+  num_cols <- ncol(joint_ecdf)
+  
+  statistic_matrix <- matrix(NA, nrow = num_rows, ncol = num_cols)
+  
+  for (i in 1:num_rows) {
+    for (j in 1:num_cols) {
+      statistic_matrix[i, j] <- joint_ecdf[i, j] - (i * j) / (num_rows * num_cols)
+    }
+  }
+  
+  return(sqrt(sum(statistic_matrix^2)))
+}
+```
+
+```{r}
+# Function to perform a permutation test with RMSE test statistic
+perm_test_for_independence_RMSE <- function(vector_1, vector_2, num_permutations, alpha = 0.05) {
+  # Calculate point estimate
+  point_estimate <- RMSE_test_statistic(empirical_joint_cdf(vector_1, vector_2))
+  
+  # Initialize vector to store permuted test statistics
+  perm_test_statistics <- numeric(num_permutations)
+  
+  for (i in 1:num_permutations) {
+    # Randomly shuffle vector_2
+    perm_vector_2 <- sample(vector_2)
+    
+    # Calculate test statistic for permuted vector_2
+    perm_test_statistic <- RMSE_test_statistic(empirical_joint_cdf(vector_1, perm_vector_2))
+    perm_test_statistics[i] <- perm_test_statistic
+  }
+  
+  # Calculate p-value
+  p_value <- mean(perm_test_statistics >= point_estimate)
+  
+  # Plot histogram
+  histogram <- ggplot(data.frame(perm_test_statistics), aes(x = perm_test_statistics)) +
+    geom_histogram(binwidth = 0.005, fill = "skyblue", color = "black", 
+                   aes(y = after_stat(density)), 
+                   breaks = seq(min(perm_test_statistics), max(perm_test_statistics), by = 1)) +
+    labs(title = "Histogram of Permuted Test Statistics (RMSE)", x = "Permuted Test Statistics (RMSE)", y = "Density") +
+    geom_vline(aes(xintercept = point_estimate, color = "Observed point"),
+               linetype = "dashed", size = 1, show.legend = TRUE) +
+    scale_x_continuous(limits = c(min(point_estimate, min(perm_test_statistics)), max(point_estimate, max(perm_test_statistics)))) +
+    scale_color_manual(name = "Legend", values = c("Observed point" = "red")) +
+    theme_minimal()
+  
+  # Display the histogram
+  print(histogram)
+  
+  cat("\n")
+  cat("The observed point is:", round(point_estimate, 4), "\n")
+  cat("The p-value is:", round(p_value, 4), "\n")
+  if (p_value < alpha) {
+  print("The variables are dependent")
+  } else {
+    print("The variables are independent")
+  }
+  
+  # Return p-value
+  return(round(p_value, 4))
+}
+```
+
+```{r, eval=FALSE}
+# Compare salary and height
+perm_test_for_independence_RMSE(Salaries$salary, Salaries$height_cm, 50)
+```
+
+```{r, eval=FALSE}
+# Compare salary and tax
+perm_test_for_independence_RMSE(Salaries$salary, Salaries$tax, 50)
+```
+
+# Permutation Test: correlation distance
+
+The implementation of this test is directly sourced from the lecture notebook. The correlation distance is a measure of correlation that assesses independence. It ranges between 0 and 1, where 0 indicates no correlation, and 1 signifies a perfect correlation.
+
+```{r}
+# Distance correlation
+Aij <- function(x) {
+  a <- as.matrix(dist(x))
+  aibar <- rowMeans(a)
+  a + mean(a) - outer(aibar, aibar, FUN = '+')
+}
+
+dCor <- function(x, y) {
+  A <- Aij(x)
+  B <- Aij(y)
+  
+  dVarX <- mean(A*A)
+  dVarY <- mean(B*B)
+  dCov <- mean(A*B)
+  dCor <- dCov / sqrt(dVarX * dVarY)
+  
+  return(c(dCor = sqrt(dCor), dCov = sqrt(dCov),
+         dVarX = sqrt(dVarX), dVarY= sqrt(dVarY)))
+}
+```
+
+Let's perform this test for the entire sample:
+
+```{r}
+# Number of replicates
+n <- 50
+alpha <- 0.05
+
+print("The observed correlation:")
+print(dcor_obs_height <- dCor(Salaries$salary, Salaries$height_cm)['dCor'])
+dcor_perms_height <- replicate(n, dCor(Salaries$salary, sample(Salaries$height_cm))['dCor'])
+print("The p-value:")
+print(pval_dcor_height <- mean(dcor_perms_height >= dcor_obs_height))
+if (pval_dcor_height < alpha) {
+print("The variables height and salary are dependent")
+} else {
+  print("The variables height and salary are independent")
+}
+
+print("The observed correlation:")
+print(dcor_obs_tax <- dCor(Salaries$salary, Salaries$tax)['dCor'])
+dcor_perms_tax <- replicate(n, dCor(Salaries$salary, sample(Salaries$tax))['dCor'])
+print("The p-value:")
+print(pval_dcor_tax <- mean(dcor_perms_tax >= dcor_obs_tax))
+if (pval_dcor_tax < alpha) {
+print("The variables tax and salary are dependent")
+} else {
+  print("The variables tax and salary are independent")
+}
+
+# Plot histogram for height correlation
+histogram_height <- ggplot(data.frame(dcor_perms_height), aes(x = dcor_perms_height)) +
+  geom_histogram(binwidth = 0.005, fill = "skyblue", color = "black", 
+                 aes(y = ..density..)) +
+  labs(title = "Histogram of Permuted Test Statistics (Correlation Distance - Height)", 
+       x = "Permuted Test Statistics (Correlation Distance)", y = "Density") +
+  geom_vline(aes(xintercept = dcor_obs_height, color = "Observed point"),
+             linetype = "dashed", size = 1, show.legend = TRUE) +
+  scale_x_continuous(limits = c(min(dcor_obs_height, min(dcor_perms_height)), max(dcor_obs_height, max(dcor_perms_height)))) +
+  scale_color_manual(name = "Legend", values = c("Observed point" = "red")) +
+  theme_minimal()
+
+# Plot histogram for tax correlation
+histogram_tax <- ggplot(data.frame(dcor_perms_tax), aes(x = dcor_perms_tax)) +
+  geom_histogram(binwidth = 0.02, fill = "skyblue", color = "black", 
+                 aes(y = ..density..)) +
+  labs(title = "Histogram of Permuted Test Statistics (Correlation Distance - Tax)", 
+       x = "Permuted Test Statistics (Correlation Distance)", y = "Density") +
+  geom_vline(aes(xintercept = dcor_obs_tax, color = "Observed point"),
+             linetype = "dashed", size = 1, show.legend = TRUE) +
+  scale_x_continuous(limits = c(min(dcor_obs_tax, min(dcor_perms_tax)), max(dcor_obs_tax, max(dcor_perms_tax)))) +
+  scale_color_manual(name = "Legend", values = c("Observed point" = "red")) +
+  theme_minimal()
+
+# Display the histograms
+print(histogram_height)
+print(histogram_tax)
+```
+
+Hmmm... according to this test, height and salary are dependent. Increasing the number of permutation replicates doesn't seem to help. Let's generate another set of random variables to ensure that this test can determine independence.
+
+```{r}
+# Generate independent vectors
+a <- rnorm(100)
+b <- rnorm(100)
+
+print("The observed correlation:")
+print(dcor_obs <- dCor(a, b)['dCor'])
+dcor_perms <- replicate(n, dCor(a, sample(b))['dCor'])
+print("The p-value:")
+print(pval_dcor <- mean(dcor_perms >= dcor_obs))
+if (pval_dcor < alpha) {
+print("The variables a and b are dependent")
+} else {
+  print("The variables a and b are independent")
+}
+```
+
+In this case, the test can correctly identify the independence between the variables. Let's compare these three tests for samples of different sizes. We will repeat each experiment for each test and each sample size five times.
+
+# Results
+
+```{r, eval=FALSE}
+# Function to perform tests
+perform_tests <- function(var1, var2, sample_sizes, repetitions, n) {
+  results <- data.frame()
+  
+  for (size in sample_sizes) {
+    for (rep in 1:repetitions) {
+      # Randomly sample the data
+      sampled_indices <- sample(nrow(Salaries), size, replace = FALSE)
+      sampled_var1 <- var1[sampled_indices]
+      sampled_var2 <- var2[sampled_indices]
+      
+      # Suppress prints and plots
+      capture_output_max_abs_diff <- capture.output({
+        max_abs_diff <- perm_test_for_independence(sampled_var1, sampled_var2, n)
+      })
+      
+      capture_output_rmse_test <- capture.output({
+        rmse_test <- perm_test_for_independence_RMSE(sampled_var1, sampled_var2, n)
+      })
+      
+      # Perform distance correlation
+      capture_output_dcor <- capture.output({
+        dcor_obs <- dCor(sampled_var1, sampled_var2)['dCor']
+        dcor_perms <- replicate(n, dCor(sampled_var1, sample(sampled_var2))['dCor'])
+        pval_dcor <- mean(dcor_perms >= dcor_obs)
+      })
+      
+      # Store results in a dataframe
+      result_row <- data.frame(
+        test_name = c("max_abs_diff", "rmse", "corr_dist"),
+        sample_size = size,
+        repetition_number = rep,
+        p_val = c(max_abs_diff, rmse_test, pval_dcor)
+      )
+      
+      results <- bind_rows(results, result_row)
+    }
+  }
+  
+  return(results)
+}
+
+# Define sample sizes and repetitions
+sample_sizes <- c(397, 300, 200, 100, 50, 10, 5)
+repetitions <- 5
+n <- 50
+
+# Perform tests for salary-height_cm variable pair
+results_salary_height_cm <- perform_tests(Salaries$salary, Salaries$height_cm, sample_sizes, repetitions, n)
+
+# Perform tests for salary-tax variable pair
+results_salary_tax <- perform_tests(Salaries$salary, Salaries$tax, sample_sizes, repetitions, n)
+```
+
+```{r, eval=FALSE}
+# Save the dataframes
+save(results_salary_height_cm, file = "results_height.Rdata")
+save(results_salary_tax, file = "results_tax.Rdata")
+```
+
+```{r}
+# Load the dataframes
+load("results_height.Rdata")
+load("results_tax.Rdata")
+```
+
+Let's visualize the results.
+
+```{r}
+results <- results_salary_height_cm
+
+# Calculate proportion of correct decisions for each test and sample size
+correct_decisions <- results %>%
+  group_by(test_name, sample_size) %>%
+  summarise(prop_correct = mean(p_val >= 0.05))
+
+# Create side-by-side bar plots
+ggplot(correct_decisions, aes(x = as.factor(sample_size), y = prop_correct, fill = test_name)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  labs(title = "Proportion of Correct Results by Sample Size (Salary and Height)",
+       x = "Sample Size", y = "Proportion of Correct Results") +
+  scale_fill_manual(values = c("max_abs_diff" = "skyblue", "rmse" = "orange", "corr_dist" = "green"),
+                    name = "Test") +
+  theme_minimal() +
+  facet_wrap(~test_name, scales = "free_y", nrow = 1) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+results <- results_salary_tax
+
+# Calculate proportion of correct decisions for each test and sample size
+correct_decisions <- results %>%
+  group_by(test_name, sample_size) %>%
+  summarise(prop_correct = mean(p_val < 0.05))
+
+# Create side-by-side bar plots
+ggplot(correct_decisions, aes(x = as.factor(sample_size), y = prop_correct, fill = test_name)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  labs(title = "Proportion of Correct Results by Sample Size (Salary and Tax)",
+       x = "Sample Size", y = "Proportion of Correct Results") +
+  scale_fill_manual(values = c("max_abs_diff" = "skyblue", "rmse" = "orange", "corr_dist" = "green"),
+                    name = "Test") +
+  theme_minimal() +
+  facet_wrap(~test_name, scales = "free_y", nrow = 1) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```

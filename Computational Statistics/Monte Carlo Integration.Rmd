@@ -1,0 +1,288 @@
+---
+title: 'MA5761 Homework #4'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+For homework assignments in this course, you will be provided with a knitted R notebook and the .rmd file used to create it. You are *encouraged* (but not required) to use the .rmd file as a template for your solutions.
+
+## Multivariate Normal Distribution
+
+Write a function which generates a sample from the multivariate normal distribution with mean vector $\boldsymbol{\mu}$ and covariance matrix $\boldsymbol{\Sigma}$. The function should take the arguments `n` (the sample size), `mu` (the mean vector), and `sigma` (the covariance matrix).
+
+Your function should use the Cholesky decomposition of the covariance matrix $\boldsymbol{\Sigma}$ to perform an appropriate transformation, and should return a matrix of dimensions $n\times p$, where $n$ is the requested sample size and $p$ is the dimension of the multivariate distribution (i.e. the length of the mean vector, or the number of rows/columns of the covariance matrix).
+
+```{r}
+my_rmvtnorm <- function(n, mu, sigma) {
+  p <- length(mu)
+  
+  # Perform Cholesky decomposition
+  R <- chol(sigma)
+  
+  # Generate n samples from a multivariate standard normal distribution
+  Z <- matrix(rnorm(n * p), n, p)
+  
+  # Transform the standard normal samples to the desired distribution
+  samples <- Z %*% R + matrix(mu, nrow = n, ncol = p, byrow = TRUE)
+  
+  return(samples)
+}
+```
+
+Test your function by generating a sample of $n=10^3$ of vectors from the multivariate distribution with $$\boldsymbol{\mu}=(92.4, 56.6, 51.8, 14.7, 27.8),
+\quad
+\boldsymbol{\Sigma}=\begin{pmatrix}
+6.4&3.7&2.5&1.0&2.2\\
+3.7&8.3&0.4&0.8&2.4\\
+2.5&0.4&7.3&-0.5&0.9\\
+1.0&0.8&-0.5&0.7&0.4\\
+2.2&2.4&0.9&0.4&3.8\end{pmatrix}$$
+
+```{r}
+# Define the mean vector and covariance matrix
+mu <- c(92.4, 56.6, 51.8, 14.7, 27.8)
+sigma <- matrix(c(6.4, 3.7, 2.5, 1.0, 2.2,
+                  3.7, 8.3, 0.4, 0.8, 2.4,
+                  2.5, 0.4, 7.3, -0.5, 0.9,
+                  1.0, 0.8, -0.5, 0.7, 0.4,
+                  2.2, 2.4, 0.9, 0.4, 3.8), nrow = 5, ncol = 5, byrow = TRUE)
+
+# Set the sample size
+n <- 10^3
+
+# Generate a sample from the multivariate distribution
+samples <- my_rmvtnorm(n = n, mu = mu, sigma = sigma)
+```
+
+This distribution is used to model a set of morphological measurements on a population of opossums in Australia:
+
+-   Head length, in mm
+-   Skull width, in mm
+-   Ear conch length, in mm
+-   Eye width, in mm
+-   Chest girth, in cm
+
+Create a scatterplot matrix with this sample. Which pair of measurements has the strongest correlation? Estimate this from your plot, and verify this by investigating the sample correlation matrix of your sample.
+
+```{r}
+# Create a data frame from the sample
+data_df <- as.data.frame(samples)
+
+# Create a scatterplot matrix
+pairs(data_df, main="Scatterplot Matrix")
+
+# Calculate the correlation matrix
+cor_matrix <- cor(data_df)
+```
+
+V1 (head length) and V2 (skull width) have the strongest correlation. Their correlation is positive with a coefficient of 0.53.
+
+
+## Multivariate Student's *t* Distribution
+
+One version of the multivariate *t* distribution is defined as the probability distribution of the random vector **t**, where
+
+$$\mathbf{t}=\frac1{\sqrt{W/\nu}}\mathbf{X}+\boldsymbol{\mu}$$
+
+In the above,
+
+-   $\mathbf{X}$ has the multivariate normal distribution with a zero mean vector and covariance matrix $\boldsymbol{\Sigma}$
+
+-   $W$ has the $\chi^2$ distribution with $\nu$ degrees of freedom, and is independent of $\mathbf{X}$
+
+-   $\boldsymbol{\mu}$ is a constant vector
+
+Write a function which generates a sample of size $n$ from the multivariate **t** distribution. This function should take the arguments `n`, `Sigma`, `mu`, and `df` (the degrees of freedom associated with $W$). Use your function used to generate a multivariate normal distribution from the previous exercise, and feel free to use `rchisq` to generate a $\chi^2$ distributed random variable. Your function should return a matrix of dimensions $n\times p$, where $n$ is the requested sample size and $p$ is the dimension of the vector to be created.
+
+```{r}
+my_rmvt <- function(n, mu, sigma, df) {
+  p <- length(mu)
+  
+  # Generate a chi-squared random variable
+  chi_sq <- rchisq(n, df)
+  
+  # Generate a sample from the multivariate normal distribution
+  normal_samples <- my_rmvtnorm(n, rep(0, p), sigma)
+  
+  # Calculate the scaling factor
+  scale_factor <- sqrt(df / chi_sq)
+  
+  # Transform the normal samples to the multivariate t-distribution
+  t_samples <- normal_samples * scale_factor + matrix(rep(mu, each = n), ncol = p, byrow = FALSE)
+  
+  return(t_samples)
+}
+```
+
+It can be proven that the mean of this probability distribution is the parameter $\boldsymbol{\mu}$ and that the covariance matrix is $\nu/(\nu-2)\cdot\boldsymbol{\Sigma}$ provided $\nu>2$. Generate a sample of size $10^4$ from the multivariate **t** distribution with parameters $\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$ as from the previous exercise, using $\nu=5$ degrees of freedom. Investigate the column means of your vector and the sample covariance matrix. Compare these to the theoretical mean vector $\boldsymbol{\mu}$ and the theoretical covariance matrix $\nu/(\nu-2)\boldsymbol{\boldsymbol{\Sigma}}$.
+
+```{r}
+# Define the parameters
+mu <- c(92.4, 56.6, 51.8, 14.7, 27.8)
+sigma <- matrix(c(6.4, 3.7, 2.5, 1.0, 2.2,
+                  3.7, 8.3, 0.4, 0.8, 2.4,
+                  2.5, 0.4, 7.3, -0.5, 0.9,
+                  1.0, 0.8, -0.5, 0.7, 0.4,
+                  2.2, 2.4, 0.9, 0.4, 3.8), nrow = 5, ncol = 5, byrow = TRUE)
+df <- 5
+n <- 10^4
+
+# Generate samples from the multivariate t-distribution
+t_samples <- my_rmvt(n=n, mu=mu, sigma=sigma, df=df)
+
+# Calculate the sample mean vector and sample covariance matrix
+sample_mean <- colMeans(t_samples)
+sample_cov <- cov(t_samples)
+
+# Calculate the theoretical mean vector and theoretical covariance matrix
+theoretical_mean <- mu
+theoretical_cov <- (df / (df - 2)) * sigma
+
+# Compare sample statistics to theoretical values
+cat("Sample Mean Vector:\n")
+print(sample_mean)
+cat("\nTheoretical Mean Vector:\n")
+print(theoretical_mean)
+
+cat("\nSample Covariance Matrix:\n")
+print(sample_cov)
+cat("\nTheoretical Covariance Matrix:\n")
+print(theoretical_cov)
+```
+
+## Simple Monte Carlo Integration
+Suppose that we are interested in estimating the value of the integral 
+$$\theta=\int_1^\infty\frac{e^{-t}}{\sqrt{t^2+1}}\,dt$$
+There are a few "obvious" routes that we can take to estimate this with simple Monte Carlo integration. 
+
+1. Recognize that $\theta=\mathbb{E}[g_1(X)]$ when $X\sim\mathsf{Exp}(1)$. Recall that the pdf of this distribution is $f_X(x)=e^{-x}$ for $x>0$. (*Note* that $g$ must have an indicator function as a factor.)
+
+2. Recognize that $\theta=\mathbb{E}[g_2(Y)]$, when $Y$ has the *shifted exponential* distribution with a scale parameter of 1 and a shift of 1. That is, the pdf of $Y$ is $f_Y(y)=e^{-(y-1)}$ for $y>1$. (*Note* that this distribution is an example of a location family of distributions; that is, $Y-1\sim\mathsf{Exp}(1)$.)
+
+3. Perform the substitution $u=x/t$ (so that $t=1/u$ and $dt=-du/u^2$). After this substitution, the interval of integration should be the unit interval, and we can recognize $\theta=\mathbb{E}(g_3(U))$, where $U\sim\mathsf{Uniform}(0,1)$. 
+
+Obtain simple Monte Carlo estimates of $\theta$ using a sample of size $N=10^6$ for each of the above three methods. Estimate the variance of each of $g_1(X)$, $g_2(Y)$, and $g_3(U)$. Which of these estimators appears to achieve the greatest reduction in variance? Estimate the percentage in variance reduction between each pair of estimators. Also, calculate 95% confidence intervals on $\theta$ from each of these estimators. 
+
+```{r}
+# Set the seed for reproducibility
+set.seed(123)
+
+# Number of samples
+N <- 10^6
+
+# Method 1: Monte Carlo using g1(X) and exp(1)
+a <- 1
+X1 <- rexp(N, rate = 1)
+g1 <- function(x) (x >= a) * 1 / sqrt(x^2 + 1)
+theta_hat_1 <- mean(g1(X1))
+variance_1 <- var(g1(X1))
+
+# Method 2: Monte Carlo using g2(Y) and shifted exp(1)
+Y2 <- 1 + rexp(N, rate = 1)
+g2 <- function(y) (y >= a) * 1 / (sqrt(y^2 + 1) * exp(1))
+theta_hat_2 <- mean(g2(Y2))
+variance_2 <- var(g2(Y2))
+
+# Method 3: Monte Carlo using g3(U) and uniform(0, 1)
+U3 <- runif(N, min = 0, max = 1)
+g3 <- function(u) (1/u^2) * exp(-1/u) / sqrt((1/u)^2 + 1)
+theta_hat_3 <- mean(g3(U3))
+variance_3 <- var(g3(U3))
+
+# Calculate 95% confidence intervals
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+se_1 <- sqrt(variance_1 / N)
+se_2 <- sqrt(variance_2 / N)
+se_3 <- sqrt(variance_3 / N)
+conf_int_1 <- c(theta_hat_1 - z * se_1, theta_hat_1 + z * se_1)
+conf_int_2 <- c(theta_hat_2 - z * se_2, theta_hat_2 + z * se_2)
+conf_int_3 <- c(theta_hat_3 - z * se_3, theta_hat_3 + z * se_3)
+
+# Percentage in variance reduction
+reduction_1_2 <- (variance_1 - variance_2) / variance_1 * 100
+reduction_1_3 <- (variance_1 - variance_3) / variance_1 * 100
+reduction_3_2 <- (variance_3 - variance_2) / variance_3 * 100
+
+# Print the results
+cat("Method 1 (Exp(1)) Estimate:", theta_hat_1, "\n")
+cat("Method 1 (Exp(1)) Variance:", variance_1, "\n")
+cat("Method 1 (Exp(1)) 95% Confidence Interval:", conf_int_1, "\n")
+cat("\n")
+cat("Method 2 (Shifted Exp(1)) Estimate:", theta_hat_2, "\n")
+cat("Method 2 (Shifted Exp(1)) Variance:", variance_2, "\n")
+cat("Method 2 (Shifted Exp(1)) 95% Confidence Interval:", conf_int_2, "\n")
+cat("\n")
+cat("Method 3 (Uniform) Estimate:", theta_hat_3, "\n")
+cat("Method 3 (Uniform) Variance:", variance_3, "\n")
+cat("Method 3 (Uniform) 95% Confidence Interval:", conf_int_3, "\n")
+cat("\n")
+cat("Percentage Variance Reduction (Method 1 to 2):", reduction_1_2, "%\n")
+cat("Percentage Variance Reduction (Method 1 to 3):", reduction_1_3, "%\n")
+cat("Percentage Variance Reduction (Method 3 to 2):", reduction_3_2, "%\n")
+```
+
+The estimator 2 (shifted exponential distribution) achieves the greatest reduction in variance.
+
+## Antithetic Monte Carlo Integration
+Suppose that we wish to estimate $\mathbb{E}(\sqrt{X})$, when $X$ has the Poisson distribution with a mean of $\lambda=10$. Obtain a simple Monte Carlo estimate of this expected value, as well as one using antithetic variates. Use a sample of size $N=10^6$ for both of these estimates (so that you will have two antithetic samples of size $N/2$ in the second method).
+
+Calculate 95% confidence intervals on this expected value obtained from your two estimates. Also, estimate the percent variance reduction in the antithetic Monte Carlo estimator over the simple Monte Carlo estimator.
+
+```{r}
+# Set the seed for reproducibility
+set.seed(123)
+
+# Number of samples
+N <- 10 ^ 6
+
+# Simple Monte Carlo
+X_simple <- rpois(N, lambda = 10)
+sqrt_X_simple <- sqrt(X_simple)
+mean_simple <- mean(sqrt_X_simple)
+
+# Antithetic Monte Carlo
+N_half <- N / 2
+u <- runif(N_half) # Generate uniform random variables
+X_original <- qpois(u, lambda = 10)
+X_antithetic <- qpois(1 - u, lambda = 10)
+
+sqrt_X_original <- sqrt(X_original)
+sqrt_X_antithetic <- sqrt(X_antithetic)
+
+# Calculate the correlation between sqrt_X_original and sqrt_X_antithetic
+correlation <- cor(sqrt_X_original, sqrt_X_antithetic)
+
+antithetic_samples <- 0.5*(sqrt_X_original + sqrt_X_antithetic)
+mean_antithetic <- mean(antithetic_samples)
+
+# Calculate 95% confidence intervals
+alpha <- 0.05
+z <- qnorm(1 - alpha/2)
+se_simple <- sd(sqrt_X_simple) / sqrt(N)
+se_antithetic <- sd(antithetic_samples) / sqrt(N_half)
+conf_int_simple <- c(mean_simple - z * se_simple, mean_simple + z * se_simple)
+conf_int_antithetic <- c(mean_antithetic - z * se_antithetic, mean_antithetic + z * se_antithetic)
+
+# Percentage variance reduction
+variance_simple <- var(sqrt_X_simple)
+variance_antithetic <- var(antithetic_samples)
+reduction_percentage <- ((variance_simple - variance_antithetic) / variance_simple) * 100
+
+# Print the results
+cat("Correlation between sqrt_X_original and sqrt_X_antithetic:", correlation, "\n")
+cat("\n")
+cat("Simple Monte Carlo Estimate:", mean_simple, "\n")
+cat("Simple Monte Carlo 95% Confidence Interval:", conf_int_simple, "\n")
+cat("\n")
+cat("Antithetic Monte Carlo Estimate:", mean_antithetic, "\n")
+cat("Antithetic Monte Carlo 95% Confidence Interval:", conf_int_antithetic, "\n")
+cat("\n")
+cat("Percentage Variance Reduction:", reduction_percentage, "%\n")
+```

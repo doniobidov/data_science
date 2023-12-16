@@ -1,0 +1,371 @@
+---
+title: 'MA5761 Homework #2'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load packages
+library(ggplot2)
+```
+
+# Exercise 1 - Pareto Distribution
+
+The Pareto distribution has a cdf given by the formula
+\[F_X(x;\alpha,\beta)=\begin{cases}1-(\frac{\beta}{x})^{\alpha}&x>\beta\\0&x\le\beta\end{cases}\]
+In the above, the parameters $\alpha$ and $\beta$ are both assumed to be positive, with $\alpha$ being called the *shape parameter* and $\beta$ being called the *scale parameter*. Note that the support of this distribution depends on the value of $\beta$. 
+
+## `ppareto` function
+Write a function `ppareto` which implements the above formula for the cdf. This function should take the arguments `x`, `shape` (i.e. $\alpha$), `scale` (i.e. $\beta$), along with an argument `lower.tail`. There should be a default argument of `scale = 1` and also a default argument of `lower.tail = TRUE`. When `lower.tail = FALSE` is passed to your function, it should return $1-F_X(x)$ instead of $F_X(x)$.
+
+```{r}
+ppareto <- function(x, shape, scale = 1, lower.tail = TRUE) {
+  if (lower.tail) {
+    p <- 1 - (scale / x)^shape
+  } else {
+    p <- (scale / x)^shape
+  }
+  p[x <= scale] <- 0
+  return(p)
+} 
+```
+
+## `dpareto` function
+Determine what the pdf of this distribution should be, recalling that
+\[f_X(x)=\frac{d}{dx}\,F_X(x)\]
+If need be, use Mathematica or other tools to help you with this differentiation problem.
+
+Implement a function for the pdf and call it `dpareto`. Make sure this function takes the arguments `x`, `shape` ($\alpha$), and `scale` ($\beta$), with a default argument of 1 for the `scale` parameter. 
+
+Make a plot of several curves of the pdf on the same set of axes, with $\alpha=1$ and $\beta=1,3,5$. Make a separate plot of several curves of the pdf on the same set of axes, with $\alpha=1,3,5$ and $\beta=1$. **Note** that your pdf should be equal to 0 for $x<\beta$!
+
+```{r}
+dpareto <- function(x, shape, scale = 1) {
+  ifelse(x <= scale, 0, shape * (scale ^ shape) / x ^ (shape + 1))
+}
+```
+
+```{r}
+# Values of x
+x_values <- seq(1, 10, by = 0.1)
+
+# DF for alpha = 1, beta = 1, 3, 5
+df_alpha_1 <- data.frame(
+  x = x_values,
+  beta1 = dpareto(x_values, shape = 1, scale = 1),
+  beta3 = dpareto(x_values, shape = 1, scale = 3),
+  beta5 = dpareto(x_values, shape = 1, scale = 5)
+)
+
+# Data frame for beta = 1, alpha = 1, 3, 5
+df_beta_1 <- data.frame(
+  x = x_values,
+  alpha1 = dpareto(x_values, shape = 1, scale = 1),
+  alpha3 = dpareto(x_values, shape = 3, scale = 1),
+  alpha5 = dpareto(x_values, shape = 5, scale = 1)
+)
+
+# Plot for alpha = 1, beta = 1, 3, 5
+ggplot(df_alpha_1, aes(x = x)) +
+  geom_line(aes(y = beta1, color = "Beta = 1"), size = 1) +
+  geom_line(aes(y = beta3, color = "Beta = 3"), size = 1) +
+  geom_line(aes(y = beta5, color = "Beta = 5"), size = 1) +
+  labs(
+    title = "PDF of Pareto Distribution (Alpha = 1)",
+    x = "x",
+    y = "PDF"
+  ) +
+  scale_color_manual(
+    values = c("Beta = 1" = "blue", "Beta = 3" = "red", "Beta = 5" = "green"),
+    guide = guide_legend(title = "Beta")
+  ) +
+  theme_minimal() + # Use minimal theme
+  xlim(0, 11) + # Set x-axis limits
+  scale_x_continuous(breaks = seq(0, 11, by = 1)) + # Customize x-axis ticks
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+
+# Plot for beta = 1
+ggplot(df_beta_1, aes(x = x)) +
+  geom_line(aes(y = alpha1, color = "Alpha = 1"), size = 1) +
+  geom_line(aes(y = alpha3, color = "Alpha = 3"), size = 1) +
+  geom_line(aes(y = alpha5, color = "Alpha = 5"), size = 1) +
+  labs(
+    title = "PDF of Pareto Distribution (Beta = 1)",
+    x = "x",
+    y = "PDF"
+  ) +
+  scale_color_manual(
+    values = c("Alpha = 1" = "blue", "Alpha = 3" = "red", "Alpha = 5" = "green"),
+    guide = guide_legend(title = "Alpha")
+  ) +
+  theme_minimal() + # Use minimal theme
+  xlim(0, 11) + # Set x-axis limits
+  scale_x_continuous(breaks = seq(0, 11, by = 1)) + # Customize x-axis ticks
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+## `qpareto` function
+Determine the quantile function $F^{-1}(x)$ for this distribution and implement this as an R function called `qpareto`. This function should take the arguments `p`, `shape`, `scale = 1`, and also `lower.tail = TRUE`. When the argument `lower.tail = FALSE` is passed to the function, it should return the value of an upper quantile (i.e. the $1-p$ quantile). 
+
+```{r}
+qpareto <- function(p, shape, scale = 1, lower.tail = TRUE) {
+  if (!lower.tail) {
+    p <- 1 - p
+  }
+  x <- scale / ((1 - p)^(1/shape))
+  return(x)
+}
+```
+
+## `rpareto` function
+Implement a function `rpareto` which generates a sample of $n$ variates from the Pareto distribution. This function should take the arguments `n`, `shape`, and `scale` (with the default value of 1 for `scale`). 
+
+```{r}
+rpareto <- function(n, shape, scale = 1) {
+  if (n <= 0 || shape <= 0 || scale <= 0) {
+    stop("Error")
+  }
+  u <- runif(n) # Generate n random uniform variables between 0 and 1
+  quantiles <- qpareto(u, shape, scale, lower.tail = TRUE)
+  return(quantiles)
+}
+```
+
+Test out your function by generating a random sample of 10,000 replicates from the Pareto distribution with $\alpha=2$ and $\beta=4$. Create a density histogram of your sample, and overlay the pdf curve on top of it using your `dpareto` function.
+
+```{r}
+# Set the random seed for reproducibility
+set.seed(5761)
+
+# Generate random samples from Pareto distribution
+alpha <- 2
+beta <- 4
+n <- 10000
+pareto_sample <- rpareto(n = n, shape = alpha, scale = beta)
+pareto_sample <- data.frame(x = pareto_sample)
+
+# Create a plot for the density histogram and PDF curve
+ggplot(pareto_sample, aes(x = x)) +
+  xlim(0, 100) + # Set x-axis limits
+  geom_histogram(aes(y = ..density..), bins = 100, fill = "lightblue", color = "black") +
+  geom_function(
+    fun = function(x) dpareto(x, shape = alpha, scale = beta),
+    color = "red",
+    size = 1.5
+  ) +
+  labs(
+    title = "Density histogram vs PDF curve of Pareto distribution",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+---
+
+# Exercise 2 - Frechet Distribution
+
+The Frechet distribution has a pdf and cdf given by the formulas
+\[f_X(x;\alpha,\mu,\sigma)=\frac{\alpha}{\sigma}\left(\frac{x-\mu}{\sigma}\right)^{-(\alpha+1)}\,e^{-(\frac{x-\mu}{\sigma})^{-\alpha}},\ x>\mu\]
+and
+\[F_X(x;\alpha,\mu,\sigma)=\begin{cases}e^{-(\frac{x-\mu}{\sigma})^{-\alpha}}&x>\mu\\0&x\le\mu\end{cases}\]
+The parameters $\alpha$, $\mu$, and $\sigma$ are called the *shape*, *location*, and *scale* parameters, respectively. 
+
+## `dfrechet` and `pfrechet` functions
+
+Write R functions which implement the pdf and cdf of this distribution. Your functions should take the arguments `x`, `shape` ($\alpha$), along with arguments taking the default values `location = 0` ($\mu$) and `scale = 1` ($\sigma$). Make sure these functions return a value of 0 when $x<\mu$.
+
+```{r}
+dfrechet <- function(x, shape, location = 0, scale = 1) {
+  ifelse(x <= location, 0, (shape / scale) * ((x - location) / scale)^(-(shape + 1)) * exp(-((x - location) / scale)^(-shape)))
+}
+
+pfrechet <- function(x, shape, location = 0, scale = 1) {
+  ifelse(x <= location, 0, exp(-((x - location) / scale)^(-shape)))
+}
+```
+
+Create some plots of the pdf for varying values of $\alpha$ while keeping the location ($\mu$) and scale ($\sigma$) parameters fixed at their default values. 
+
+```{r}
+# Values of x
+x_values <- seq(0, 10, by = 0.1)
+
+# Values of alpha (shape parameter)
+alpha_values <- c(1, 2, 3)
+
+df_alpha <- expand.grid(x = x_values, alpha = alpha_values)
+
+# Calculate PDF values for each combination of x and alpha
+df_alpha$pdf <- dfrechet(df_alpha$x, shape = df_alpha$alpha)
+
+# Plot the PDF curves for varying alpha values
+ggplot(df_alpha, aes(x = x, y = pdf, color = factor(alpha))) +
+  geom_line(size = 1) +
+  labs(
+    title = "PDF of Frechet Distribution",
+    x = "x",
+    y = "PDF"
+  ) +
+  scale_color_discrete(name = "Alpha") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+## `qfrechet` function
+
+Implement the quantile function for the Frechet distribution, calling this function `qfrechet`. It should take the arguments `p`, `shape`, `location`, and `scale` (with `location = 0` and `scale = 1` being default arguments). The median of this distribution can be shown to be
+\[\mu+\sigma\left(\ln(2)\right)^{-1/\alpha}\]
+Verify that your `qfrechet` function is implemented correctly by calculating the median with `qfrechet` and checking it with the above formula for a few values of $\alpha$ (you can keep $\mu=0$ and $\sigma=1$). 
+
+```{r}
+qfrechet <- function(p, shape, location = 0, scale = 1) {
+  location + scale * ((log(1 / p))^(-1 / shape))
+}
+```
+
+```{r}
+location = 0
+scale = 1
+
+# Verify the qfrechet function for the median
+alpha_values <- c(1, 2, 3)
+for (alpha in alpha_values) {
+  median_formula <- location + scale * ((log(2))^(-1 / alpha))
+  median_qfrechet <- qfrechet(0.5, shape = alpha, location = location, scale = scale)
+  cat(paste("Alpha =", alpha, ": Median (Formula) =", median_formula, ", Median (qfrechet) =", median_qfrechet, "\n"))
+} 
+```
+
+## `rfrechet` function
+
+Write an R function, `rfrechet`, which generates a sample of size $n$ from the Frechet distribution. Your function should take the arguments `n`, `shape`, `location` and `scale` (with the default arguments `location = 0` and `scale = 1`).
+
+```{r}
+rfrechet <- function(n, shape, location = 0, scale = 1) {
+  if (n <= 0 || shape <= 0 || scale <= 0) {
+    stop("Error")
+  }
+  
+  # Generate n random uniform variables between 0 and 1
+  u <- runif(n)
+  
+  # Calculate the quantiles
+  quantiles <- qfrechet(u, shape, location, scale)
+  
+  return(quantiles)
+}
+```
+
+Use your function to generate a random sample of $10^4$ variates from the Frechet distribution with $\alpha=4$, $\mu=1$, and $\sigma=2$. Create a density histogram of this sample, and overlay a plot of the pdf created with your `dfrechet` function.
+
+```{r}
+# Set the random seed for reproducibility
+set.seed(5761)
+
+# Generate random samples from Frechet distribution
+shape <- 2
+location <- 1
+scale <- 2
+n <- 10000
+frechet_sample <- rfrechet(n=n, shape=shape, location=location, scale=scale)
+frechet_sample <- data.frame(x = frechet_sample)
+
+# Create a plot for the density histogram and PDF curve
+ggplot(frechet_sample, aes(x = x)) +
+  geom_histogram(aes(y = ..density..), bins = 100, fill = "lightblue", color = "black") +
+  geom_function(
+    fun = function(x) dfrechet(x, shape=shape, location=location, scale=scale),
+    color = "red",
+    size = 1.5
+  ) +
+  labs(
+    title = "Density histogram vs PDF curve of Frechet distribution",
+    x = "x",
+    y = "Density"
+  ) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, size = 16))
+```
+
+The *mode* of the Frechet distribution (where the "peak" lies in the pdf) is known to be
+\[\mu+\sigma\left(\frac{\alpha}{1+\alpha}\right)^{1/\alpha}\]
+Calculate this number for the given parameters, and comment on whether your histogram agrees with this fact. 
+
+```{r}
+# Create a histogram of the sample
+hist(frechet_sample$x, main = "Histogram of Frechet distribution", xlab = "x", ylab = "Frequency", col = "lightblue")
+
+# Calculate the mode
+mode <- location + scale * ((alpha / (1 + alpha))^(1 / alpha))
+abline(v = mode, col = "red", lwd = 2)
+legend("topright", legend = paste("Mode =", round(mode, 2)), col = "red", lwd = 2)
+```
+
+The theoretical population mode lies in the bin that belong to the sample mode.
+
+---
+
+# Exercise 3 - Discrete Distribution
+Suppose that a discrete random variable $X$ has the pmf as stated in the table below:
+
+| $x$ | 0 | 1 | 2| 3 | 4 | 5 |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| $f_X(x)$ | 0.05 | 0.1 | 0.15 | 0.4 | 0.15 | 0.15 |
+
+## `rdiscrete` function
+
+Write a function, call it `rdiscrete` for lack of a better choice, which generates a random sample of $n$ variates from this distribution using the inverse transform method (i.e. do *not* just use the `sample` function). This function need only take the argument `n`, though for an interesting challenge you might consider allowing the function to further take the arguments `x` and `prob`, which would be vectors of the possible values of $X$ and their associated probabilities. 
+
+```{r}
+x_values <- c(0, 1, 2, 3, 4, 5)
+probabilities <- c(0.05, 0.1, 0.15, 0.4, 0.15, 0.15)
+
+rdiscrete <- function(n, x=x_values, prob=probabilities) {
+  if (length(x) != length(prob)) {
+    stop("Error")
+  }
+  
+  if (!all(prob >= 0) || sum(prob) != 1) {
+    stop("Error")
+  }
+  
+  u <- runif(n)
+  
+  # Initialize the result vector
+  sample <- numeric(n)
+  
+  # Generate samples
+  for (i in 1:n) {
+    cumulative_prob <- 0
+    for (j in 1:length(x)) {
+      cumulative_prob <- cumulative_prob + prob[j]
+      if (u[i] <= cumulative_prob) {
+        sample[i] <- x[j]
+        break
+      }
+    }
+  }
+  
+  return(sample)
+}
+```
+
+## Generate a sample
+Use your `rdiscrete` function to generate a sample of $10^4$ observations from this distribution. Create a table of relative frequencies (sample proportions) of this sample, and compare it to the probabilities in the pmf. 
+
+```{r}
+sample_discrete <- rdiscrete(n = 10^4, x = x_values, prob = probabilities)
+
+#create relative frequency table
+table(sample_discrete)/length(sample_discrete)
+```
+
+The sample proportions are approximately the same as the population PMF.
