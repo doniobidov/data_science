@@ -1,0 +1,276 @@
+---
+title: 'MA5732-GLMs Homework #2'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("GLMsData")
+library(GLMsData)
+library(ggplot2)
+
+# Load the datasets
+data(crawl)
+```
+
+# Problem 1.3
+
+## Exercise 1
+
+```{r}
+# Scatter plot of Age against Temp (Data Aggregated over Month)
+ggplot(crawl, aes(x = Temp, y = Age)) +
+  geom_point() +
+  labs(x = "The Monthly Average Temperature (°F) Six Months After the Birth Month",
+       y = "The Mean Age (Weeks) at Which the Babies Started to Crawl",
+       title = "Scatter Plot of Age against Temperature (Data Aggregated over Month)") +
+  theme_minimal()
+```
+
+With an exception of a few outliers, the mean age to crawl is linearly reducing with an increasing monthly average temperature. The homoscedasticity does not seem to be a huge issue, if the outliers are ignored.
+
+## Exercise 2
+
+The response variable **Age** is the **mean age** (in completed weeks) at which the babies born this month started to crawl, **not ages of individual babies**. If ages of individual babies at age $x_i$ have variance $𝜎^2$, then mean ages of babies from the same group have variance $𝜎^2/w_i$, where $w_i$ is the **sample size** of group $i$.
+
+## Exercise 3
+
+A possible model for the data is: 
+\[y_i \sim N(\mu_i, \frac{\sigma^2}{w_i}) = N(\beta_0 + \beta_1 x_{i1}, \frac{\sigma^2}{w_i})\]
+where $(i=1,⋯,n)$ and $y_i$ are independent.
+
+```{r}
+# Fit a weighted linear regression model
+weighted_lm <- lm(Age ~ Temp, data = crawl, weights = 1/SampleSize)
+
+# Display the summary of the model
+summary(weighted_lm)
+```
+
+```{r}
+# Store the results in variables
+coefficient_estimate <- coef(weighted_lm)["Temp"]
+standard_error <- summary(weighted_lm)$coefficients["Temp", "Std. Error"]
+t_value <- coef(weighted_lm)["Temp"] / summary(weighted_lm)$coefficients["Temp", "Std. Error"]
+p_value <- coef(summary(weighted_lm))["Temp", "Pr(>|t|)"]
+```
+
+### Interpretation:
+
+- The estimated coefficient for `Temp` (`r round(coefficient_estimate, 5)`) represents the expected change in the mean age at which babies start to crawl for each one-degree Fahrenheit increase in the monthly average temperature six months after birth.
+
+- The standard error (`r round(standard_error, 5)`) provides a measure of uncertainty or variability in this estimate. It indicates how much the estimated coefficient might vary if the study were repeated.
+
+- The t-value (`r round(t_value, 3)`) is the ratio of the estimated coefficient to its standard error. In this case, it suggests that the coefficient for `Temp` is significantly different from zero.
+
+- The p-value (`r round(p_value, 4)`) associated with `Temp` is less than the conventional significance level of `0.05`, indicating that there is evidence to reject the null hypothesis that the coefficient for `Temp` is zero. In other words, there is evidence to suggest that the temperature has a significant effect on the mean age at which babies start to crawl.
+
+In summary, the model suggests that there is a significant negative relationship between the monthly average temperature and the mean age at which babies start to crawl. As the temperature increases, the mean age to crawl tends to decrease.
+
+## Exercise 4
+
+```{r}
+# Degrees of freedom (df) for the t-distribution
+df <- length(crawl$Temp) - 2 # n-(p+1)
+
+# Calculate the t-test statistic
+t_statistic <- (coefficient_estimate - 0) / standard_error
+
+# Calculate the one-sided p-value for a left-tailed test
+p_value_one_sided <- pt(t_statistic, df)
+
+# Display the results
+t_statistic
+p_value
+```
+
+```{r}
+# Check if we reject the null hypothesis based on the one-sided p-value
+if (p_value_one_sided < 0.05) {
+  cat("The one-sided p-value is less than 0.05. Reject the null hypothesis.\n")
+  cat("Conclusion: There is evidence to suggest that babies take longer to learn to crawl in colder months.")
+} else {
+  cat("The one-sided p-value is greater than or equal to 0.05. Fail to reject the null hypothesis.\n")
+  cat("Conclusion: There is insufficient evidence to suggest that babies take longer to learn to crawl in colder months.")
+}
+```
+
+## Exercise 5
+
+```{r}
+# Given information
+alpha = 0.05  # Significance level
+alpha_over_2 = alpha / 2  # Two-tailed alpha
+
+# Critical value from t-distribution
+critical_value = qt(1 - alpha_over_2, df)
+
+# Calculate the margin of error
+margin_of_error = critical_value * standard_error
+
+# Calculate the lower and upper bounds of the confidence interval
+lower_bound = coefficient_estimate - margin_of_error
+upper_bound = coefficient_estimate + margin_of_error
+
+# Display the results
+cat("95% Confidence Interval for the Slope:\n")
+cat(sprintf("Lower Bound: %.5f\n", lower_bound))
+cat(sprintf("Upper Bound: %.5f\n", upper_bound))
+```
+
+**95% Confidence Interval for the Slope:**
+
+The 95% confidence interval for the slope of the relationship between monthly average temperature (`Temp`) and the mean age at which babies start to crawl is approximately \([-0.13574, -0.02303]\).
+
+**Interpretation:**
+
+1. **Negative Slope:** The interval is entirely below zero, indicating a negative slope for the relationship. This suggests that as the monthly average temperature increases, the mean age at which babies start to crawl tends to decrease.
+
+2. **Statistical Significance:** Since the interval does not include zero, we can interpret this result as statistically significant. There is evidence at the 95% confidence level to suggest that there is a significant negative relationship between monthly average temperature and the mean age at which babies start to crawl.
+
+In summary, based on the 95% confidence interval, we can conclude that there is a statistically significant negative association between temperature and the mean age at which babies start to crawl. As temperatures increase, the mean age at which babies begin to crawl tends to decrease.
+
+## Exercise 6
+
+```{r}
+# Fit unweighted linear regression model
+unweighted_lm <- lm(Age ~ Temp, data = crawl)
+
+# Scatter plot with both weighted and unweighted regression lines
+ggplot(crawl, aes(x = Temp, y = Age, color = factor(c('Weighted', 'Unweighted')))) + 
+  geom_point(color = "black") +
+  geom_smooth(aes(linetype = "Weighted"), method = "lm", formula = y ~ x, se = FALSE, color = "blue", linetype = "solid", linewidth = 1) +
+  geom_smooth(aes(linetype = "Unweighted"), method = "lm", formula = y ~ x, se = FALSE, color = "red", linetype = "dashed", linewidth = 1) +
+  labs(x = "The Monthly Average Temperature (°F) Six Months After the Birth Month",
+       y = "The Mean Age (Weeks) at Which the Babies Started to Crawl",
+       title = "Comparison of Weighted (Blue) and Unweighted (Red) Regression Lines") + theme_minimal() +
+theme(legend.position = "bottom")
+```
+
+There is almost no difference between the weighted and not weighted linear models in this case. This can be possibly be explained by a relatively small difference in sample sizes between different groups.
+
+# Problem 1.4
+
+```{r}
+# Given parameter estimates and standard errors
+constant_estimate <- 100.812
+constant_se <- 13.096
+
+age_estimate <- 0.332
+age_se <- 0.062
+
+waist_estimate <- 0.411
+waist_se <- 0.090
+
+alcohol_estimate <- -3.003
+alcohol_se <- 1.758
+
+smoking_estimate <- -0.362
+smoking_se <- 2.732
+
+temp_estimate <- -0.521
+temp_se <- 0.262
+```
+
+## Exercise 1
+
+```{r}
+# Compute p-values for Age and Smoking
+# Null hypothesis: βj = 0 vs Alternative hypothesis: βj ≠ 0
+df <- 574 - 6
+p_value_age <- 2 * (pt(abs(age_estimate / age_se), df = df, lower.tail = FALSE))
+p_value_smoking <- 2 * (pt(abs(smoking_estimate / smoking_se), df = df, lower.tail = FALSE))
+
+# Display p-values
+cat("P-value for Age:", p_value_age, "\n")
+cat("P-value for Smoking:", p_value_smoking, "\n")
+
+# Comment on the p-values
+if (p_value_age < 0.05) {
+  cat("P-value for Age is less than 0.05. Reject the null hypothesis.\n")
+  cat("Conclusion: Age has a significant effect on systolic blood pressure.\n")
+} else {
+  cat("P-value for Age is greater than or equal to 0.05. Fail to reject the null hypothesis.\n")
+  cat("Conclusion: There is insufficient evidence to suggest that Age has a significant effect on systolic blood pressure.\n")
+}
+
+if (p_value_smoking < 0.05) {
+  cat("P-value for Smoking is less than 0.05. Reject the null hypothesis.\n")
+  cat("Conclusion: Smoking has a significant effect on systolic blood pressure.\n")
+} else {
+  cat("P-value for Smoking is greater than or equal to 0.05. Fail to reject the null hypothesis.\n")
+  cat("Conclusion: There is insufficient evidence to suggest that Smoking has a significant effect on systolic blood pressure.\n")
+}
+```
+
+## Exercise 2
+
+After adjusting for Age, Waist circumference, Alcohol consumption, and Smoking habits the relationship between Ambient temperature and systolic blood pressure can be interpreted as follows:
+
+For each **one-degree Celsius increase in Ambient temperature**, **on average**, the systolic **blood pressure** is expected to **decrease by 0.521** mm Hg, holding other variables constant.
+
+## Exercise 3
+
+```{r}
+# Compute a 95% confidence interval for the regression parameter for Ambient temperature
+alpha = 0.05  # Significance level
+alpha_over_2 = alpha / 2  # Two-tailed alpha
+
+# Degrees of freedom for t-distribution
+df_temp = 574 - 6
+
+# Critical value from t-distribution
+critical_value_temp = qt(1 - alpha_over_2, df_temp)
+
+# Calculate the margin of error
+margin_of_error_temp = critical_value_temp * temp_se
+
+# Calculate the lower and upper bounds of the confidence interval
+lower_bound_temp = temp_estimate - margin_of_error_temp
+upper_bound_temp = temp_estimate + margin_of_error_temp
+
+# Display the results
+cat("95% Confidence Interval for the regression parameter for Ambient temperature:\n")
+cat(sprintf("Lower Bound: %.5f\n", lower_bound_temp))
+cat(sprintf("Upper Bound: %.5f\n", upper_bound_temp))
+```
+
+The 95% confidence interval for the regression parameter for Ambient temperature is \([-1.03561, -0.00639]\). Since this interval does not include zero, we can interpret it as follows:
+
+- **Negative Interval:** The entire interval is below zero, indicating a negative effect of Ambient temperature on systolic blood pressure.
+
+- **Statistical Significance:** Since the interval does not contain zero, we can conclude that there is statistical evidence at the 95% confidence level to suggest that Ambient temperature has a significant effect on systolic blood pressure in Ghanaian men aged between 18 and 65.
+
+In summary, based on the confidence interval, we can infer that each one-degree Celsius increase in Ambient temperature is associated with a statistically significant decrease in systolic blood pressure, after adjusting for other variables in the model.
+
+## Exercise 4
+
+```{r}
+# Predict the mean systolic blood pressure for 35-year-old Ghanaian men
+# (who do not smoke, do drink alcohol, and have a waist circumference of 100 cm)
+# when the ambient temperature is 30°C
+
+# Given values
+age_pred <- 35
+waist_pred <- 100
+alcohol_pred <- 1  # Yes: 1
+smoking_pred <- 0  # No: 0
+temp_pred <- 30
+
+# Calculate the predicted mean systolic blood pressure
+predicted_pressure <- constant_estimate +
+  age_estimate * age_pred +
+  waist_estimate * waist_pred +
+  alcohol_estimate * alcohol_pred +
+  smoking_estimate * smoking_pred +
+  temp_estimate * temp_pred
+
+cat(sprintf("Predicted mean systolic blood pressure for 35-year-old Ghanaian men:\n%.2f mm Hg\n", predicted_pressure))
+```

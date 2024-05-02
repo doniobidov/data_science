@@ -1,0 +1,130 @@
+---
+title: 'MA5732-GLMs Module 2 Homework #1'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("GLMsData")
+library(GLMsData)
+```
+
+# Problem 2.1
+
+## Exercises 1-8
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("2_1.jpg")
+```
+
+## Exercise 9 and 10
+
+```{r}
+# Function to calculate W^2
+calculate_W_squared <- function(mu, n) {
+  return (((mu - 1) / sqrt(mu^2 / n))^2)
+}
+
+# Function to calculate LRT
+calculate_LRT <- function(mu, n) {
+  return (2 * n * (mu - log(mu) - 1))
+}
+
+# Values of mu from 0.5 to 2.0 with a step of 0.1
+mu_values <- seq(0.5, 2.0, by = 0.1)
+
+# For n = 10
+n_10_W_squared <- sapply(mu_values, function(mu) calculate_W_squared(mu, 10))
+n_10_LRT <- sapply(mu_values, function(mu) calculate_LRT(mu, 10))
+
+# For n = 100
+n_100_W_squared <- sapply(mu_values, function(mu) calculate_W_squared(mu, 100))
+n_100_LRT <- sapply(mu_values, function(mu) calculate_LRT(mu, 100))
+
+# Plot for n = 10
+plot(mu_values, n_10_W_squared, type = "l", col = "blue", xlab = "mu", ylab = "W^2", main = "W^2 and LRT for n = 10")
+lines(mu_values, n_10_LRT, type = "l", col = "red")
+legend("topright", legend = c("W^2", "LRT"), col = c("blue", "red"), lty = 1)
+
+# Plot for n = 100
+plot(mu_values, n_100_W_squared, type = "l", col = "blue", xlab = "mu", ylab = "W^2", main = "W^2 and LRT for n = 100")
+lines(mu_values, n_100_LRT, type = "l", col = "red")
+legend("topright", legend = c("W^2", "LRT"), col = c("blue", "red"), lty = 1)
+```
+
+The ratios of $W^2$ and LRT for both **n=10** and **n=100** are the same throughout different values of $mu$. Notably, only the individual magnitudes of $W^2$ and LRT change with n (by a factor of 10). This behavior is expected as both of these values are proportional to n. Moreover, for both **n=10** and **n=100**, $W^2$ and LRT are only equal at around $mu=1$. For other values of $mu$, $W^2$ and LRT are different.
+
+# Problem 2.2
+
+## Exercises 1-6
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("2_2.jpg")
+```
+
+**The calculations can be found below**
+
+## Exercise 1
+
+```{r}
+# Define information the matrix
+I_beta_hat <- matrix(c(4823, 12334, 20871,
+                        12334, 31798, 53423,
+                        20871, 53423, 90348), nrow = 3, byrow = TRUE)
+
+# Calculate the variance-covariance matrix (inverse of information matrix)
+var_covar_matrix <- solve(I_beta_hat)
+
+# Print the result
+print(var_covar_matrix)
+```
+
+## Exercise 2
+
+```{r}
+se_beta_1 <- sqrt(var_covar_matrix[2,2])
+print(se_beta_1)
+```
+
+## Exercise 3
+
+```{r}
+upper_beta_1 <- 2 + 1.96*se_beta_1
+lower_beta_1 <- 2 - 1.96*se_beta_1
+print(lower_beta_1)
+print(upper_beta_1)
+```
+
+## Exercise 4
+
+```{r}
+# Define the row vector
+row_vector <- matrix(c(0, 1, -1), nrow = 1, ncol = 3)
+
+# Define the column vector
+column_vector <- matrix(c(0, 1, -1), nrow = 3, ncol = 1)
+
+# Multiply
+var_beta_one_minus_two <- row_vector %*% var_covar_matrix %*% column_vector
+
+se_beta_one_minus_two <- sqrt(var_beta_one_minus_two)
+
+# Print the result
+print(se_beta_one_minus_two)
+```
+
+## Exercise 5
+
+```{r}
+upper_beta_1_min_two <- 2 - 1 + 1.96*se_beta_one_minus_two
+lower_beta_1_min_two <- 2 - 1 - 1.96*se_beta_one_minus_two
+print(lower_beta_1_min_two)
+print(upper_beta_1_min_two)
+```

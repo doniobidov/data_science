@@ -1,0 +1,134 @@
+---
+title: 'MA5732-GLMs Homework #1'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("GLMsData")
+library(GLMsData)
+
+# Load the datasets
+data(humanfat)
+```
+
+# Exercise 1
+
+| Model                                              | Linear in parameters    | Linear regression model  | GLM  |
+|:--------------------------------------------------:|:-----------------------:|:------------------------:|:----:|
+|1. \( \exp (\beta_0 + \beta_1x_1 + \beta_2x_2^2) \) | Yes                     | No                       | Yes  |
+|2. \( \log(\beta_0 + \beta_1x_1) + \beta_2x_2^2 \)  | No                      | No                       | No   |
+|3. \( \beta_0 + \beta_1x \)                         | Yes                     | Yes                      | Yes  |
+|4. \( (\beta_0 + \beta_1x_2 + \beta_2x_1x_2)^2 \)   | Yes                     | No                       | Yes  |
+
+# Exercise 2
+
+## 1
+
+```{r}
+# Use names() function to get variable names
+names(humanfat)
+```
+
+## 2
+
+```{r}
+# Determine variable types
+sapply(humanfat, is.numeric)
+```
+
+- **Quantitative variables: Age, Percent.Fat, BMI**
+
+- **Qualitative variables: Gender**
+
+## 3
+
+```{r}
+# Print the reference level and the first 6 observations for the Geneder variable
+ contrasts(humanfat$Gender)
+ head(humanfat$Gender)
+```
+
+**The first level F (female) is used as the reference. So, we only need to record values for the M (male) level.**
+**The first observation for M variable is 1, and the second observation for the M variable is 0.**
+
+## 4
+
+```{r}
+# Plot Percent.Fat against Age
+plot(humanfat$Age, humanfat$Percent.Fat, main = "Percentage Body Fat vs. Age", xlab = "Age (years)", ylab = "Percentage Fat (%)")
+
+# Plot Percent.Fat against Gender
+plot(humanfat$Gender, humanfat$Percent.Fat, main = "Percentage Body Fat vs. Gender", xlab = "Gender", ylab = "Percentage Fat (%)")
+
+# Plot Percent.Fat against BMI
+plot(humanfat$BMI, humanfat$Percent.Fat, main = "Percentage Body Fat vs. BMI", xlab = "BMI (meter / kg^2)", ylab = "Percentage Fat (%)")
+```
+
+```{r}
+# Plot Percent.Fat against Age with different colors for genders
+plot(humanfat$Age, humanfat$Percent.Fat, col = ifelse(humanfat$Gender == "F", "blue", "red"),
+     main = "Percentage Body Fat vs. Age", xlab = "Age (years)", ylab = "Percentage Fat (%)", pch = 16)
+
+# Legend for Gender
+legend("topright", legend = levels(humanfat$Gender), col = c("blue", "red"), pch = 16, title = "Gender")
+
+# Plot Percent.Fat against BMI with different colors for genders
+plot(humanfat$BMI, humanfat$Percent.Fat, col = ifelse(humanfat$Gender == "F", "blue", "red"),
+     main = "Percentage Body Fat vs. BMI", xlab = "BMI (meter / kg^2)", ylab = "Percentage Fat (%)", pch = 16)
+
+# Legend for Gender
+legend("topright", legend = levels(humanfat$Gender), col = c("blue", "red"), pch = 16, title = "Gender")
+```
+
+- **Percentage Body Fat vs. Age:**
+Percentage body fat seems to linearly increase as age goes up. It seems like we do not have enough data for the people younger than 40 years old. There is an outlier in terms of the body fat percentage at the age of 23.
+
+- **Percentage Body Fat vs. Gender:**
+Females seem to have more body fat percentage on average than males. Moreover, the variability of body fat percentage for females is lower that that for males.
+
+- **Percentage Body Fat vs. BMI:**
+There seems to be some curvature between the percentage of body fat and BMI. However, it is hard to make strong conclusions as the data mostly contains individuals with BMI between 21 and 29.
+
+- **Percentage Body Fat vs. Age for Males and Females Separately:**
+There seem to be as strong linear relationship for both males and females for this pair of variables. The variability of the percentage of body fat might be increasing with increasing age. However, this might be because of insufficient observations at the age below 40.
+
+- **Percentage Body Fat vs. BMI for Males and Females Separately:**
+If we ignore one male and one female outlier for this plot, the relationships seem to be linear. It is worth noting that the data set itself is imbalanced, with a lack of the male samples.
+
+## 5
+
+The **linear regression seems to be a reasonable choice** based on the plots above. Each quantitative predictor has an approximately linear relationship with respect to the response variable across different levels of the qualitative variable 'Gender'. Noticeably, a 3D plot for Male and Female observations visualized separately would be more informative, as we need to consider all the variables together, instead of comparing them separately. The assumption of homoscedasticity for linear regression might be violated in some case, so this is another area for concern.
+
+## 6
+
+\( \mu = \beta_0 + \beta_1x_1 + \beta_2x_2 \)
+
+$x_1$ is BMI and $x_2$ is Gender (1 for males).
+
+**For a 1 unit increase in BMI, body fat increases by $\beta_1$ percents on average.**
+
+**On average, body fat increases by $\beta_2$ percents for males compared to females.**
+
+## 7
+
+\( \log(\mu) = \beta_0 + \beta_1x_1 + \beta_2x_2 \)
+
+$x_1$ is BMI and $x_2$ is Gender (1 for males).
+
+**For a 1 unit increase in BMI, body fat increases by *a factor* of $\exp(\beta_1)$ percents on average.**
+
+**On average, body fat increases by *a factor* of $\exp(\beta_2)$ percents for males compared to females.**
+
+## 8
+
+\( \mu = \beta_0 + \beta_1x_1 + \beta_2x_2 \): **p = 2, q = 3**
+
+\( \log(\mu) = \beta_0 + \beta_1x_1 + \beta_2x_2 \): **p = 2, q = 3**

@@ -1,0 +1,222 @@
+---
+title: 'MA5732-GLMs Homework #4'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("GLMsData")
+library(GLMsData)
+```
+
+# Problem 1.8
+
+## Exercise 1
+
+```{r}
+# Load the dataset
+data(hcrabs)
+
+# One-hot encode the Col variable
+one_hot_col <- model.matrix(~ Col - 1, data = hcrabs)
+
+# Exclude the reference level ("D")
+one_hot_col_noRef <- one_hot_col[, c("ColDM", "ColLM", "ColM")]
+
+# Combine the new columns with the original data
+hcrabs <- cbind(hcrabs, one_hot_col_noRef)
+
+# Convert to factors
+hcrabs$ColDM <- factor(hcrabs$ColDM)
+hcrabs$ColLM <- factor(hcrabs$ColLM)
+hcrabs$ColM <- factor(hcrabs$ColM)
+
+# Fit the full model
+fit_full <- lm(Sat ~ ColDM + ColLM + ColM + Spine + Width + Wt, data = hcrabs)
+
+# Fit the reduced model with "LM" level set to zero
+fit_reduced <- lm(Sat ~ ColDM + 0*ColLM + ColM + Spine + Width + Wt, data = hcrabs)
+
+# Use anova to perform the F-test
+anova_result <- anova(fit_reduced, fit_full)
+
+# Extract F-test values
+f_value <- anova_result[2, "F"]
+p_value_f <- anova_result[2, "Pr(>F)"]
+df1 <- anova_result[2, "Df"]
+df2 <- anova_result[2, "Res.Df"]
+
+# Perform t-test to check the results
+t_value <- summary(fit_full)$coefficients["ColLM1", "t value"]
+p_value <- summary(fit_full)$coefficients["ColLM1", "Pr(>|t|)"]
+df_t <- summary(fit_full)$df[2]
+
+# Display the results
+print("T-Test:")
+print(c("t value" = t_value, "p-value" = p_value, "df" = df_t))
+
+print("F-Test:")
+print(c("F value" = f_value, "p-value" = p_value_f, "df1" = df1, "df2" = df2))
+
+# Check if the p-values are the same for t-test and F-test
+print("Are p-values the same for t-test and F-test?")
+print(all.equal(p_value, p_value_f))
+
+# Calculate squared t-statistic and compare with F-statistic
+squared_t_statistic = t_value^2
+print("Squared t-statistic:")
+print(squared_t_statistic)
+
+print("F-Statstic:")
+print(f_value)
+
+# Check if the squared t-statistic is the same as the F-statistic
+print("Are squared t-statistic and F-statistic the same?")
+print(all.equal(squared_t_statistic, f_value))
+```
+
+## Exercise 2
+
+```{r}
+# Load the dataset
+data(hcrabs)
+
+# Set "ColDM" as the reference level in the Col column
+hcrabs$Col <- relevel(hcrabs$Col, ref = "DM")
+
+# One-hot encode the Col variable
+one_hot_col <- model.matrix(~ Col - 1, data = hcrabs)
+
+# Exclude the reference level ("DM")
+one_hot_col_noRef <- one_hot_col[, c("ColD", "ColLM", "ColM")]
+
+# Combine the new columns with the original data
+hcrabs <- cbind(hcrabs, one_hot_col_noRef)
+
+# Convert to factors
+hcrabs$ColD <- factor(hcrabs$ColD)
+hcrabs$ColLM <- factor(hcrabs$ColLM)
+hcrabs$ColM <- factor(hcrabs$ColM)
+
+# Fit the full model
+fit_full <- lm(Sat ~ ColD + ColLM + ColM + Spine + Width + Wt, data = hcrabs)
+
+# Fit the reduced model with "LM" level set to zero
+fit_reduced <- lm(Sat ~ ColD + ColLM + 0*ColM + Spine + Width + Wt, data = hcrabs)
+
+# Use anova to perform the F-test
+anova_result <- anova(fit_reduced, fit_full)
+
+# Extract F-test values
+f_value <- anova_result[2, "F"]
+p_value_f <- anova_result[2, "Pr(>F)"]
+df1 <- anova_result[2, "Df"]
+df2 <- anova_result[2, "Res.Df"]
+
+# Perform t-test to check the results
+t_value <- summary(fit_full)$coefficients["ColM1", "t value"]
+p_value <- summary(fit_full)$coefficients["ColM1", "Pr(>|t|)"]
+df_t <- summary(fit_full)$df[2]
+
+# Display the results
+print("T-Test:")
+print(c("t value" = t_value, "p-value" = p_value, "df" = df_t))
+
+print("F-Test:")
+print(c("F value" = f_value, "p-value" = p_value_f, "df1" = df1, "df2" = df2))
+
+# Check if the p-values are the same for t-test and F-test
+print("Are p-values the same for t-test and F-test?")
+print(all.equal(p_value, p_value_f))
+
+# Calculate squared t-statistic and compare with F-statistic
+squared_t_statistic = t_value^2
+print("Squared t-statistic:")
+print(squared_t_statistic)
+
+print("F-Statstic:")
+print(f_value)
+
+# Check if the squared t-statistic is the same as the F-statistic
+print("Are squared t-statistic and F-statistic the same?")
+print(all.equal(squared_t_statistic, f_value))
+```
+
+## Exercise 3
+
+**b1x1 + b3x3 = b13(x1+x3) if b1 = b3**
+**Now, we need to check whether b13 is 0**
+
+```{r}
+# Load the dataset
+data(hcrabs)
+
+# One-hot encode the Col variable
+one_hot_col <- model.matrix(~ Col - 1, data = hcrabs)
+
+# Exclude the reference level ("D")
+one_hot_col_noRef <- one_hot_col[, c("ColDM", "ColLM", "ColM")]
+
+# Combine the new columns with the original data
+hcrabs <- cbind(hcrabs, one_hot_col_noRef)
+
+# Convert to factors
+hcrabs$ColDM <- factor(hcrabs$ColDM)
+hcrabs$ColLM <- factor(hcrabs$ColLM)
+hcrabs$ColM <- factor(hcrabs$ColM)
+
+# Add a new factor variable Col_DM_M
+# 1 if either ColDM or ColM is 1, and 0 otherwise
+hcrabs$Col_DM_M <- factor(1*(hcrabs$ColDM == 1 | hcrabs$ColM == 1), levels = c(0, 1))
+hcrabs$Col_DM_M <- factor(hcrabs$Col_DM_M)
+
+# Fit the full model
+fit_full <- lm(Sat ~ Col_DM_M + ColLM + Spine + Width + Wt, data = hcrabs)
+
+# Fit the reduced model with "DM or M" level set to zero
+fit_reduced <- lm(Sat ~ 0*Col_DM_M + ColLM + Spine + Width + Wt, data = hcrabs)
+
+# Use anova to perform the F-test
+anova_result <- anova(fit_reduced, fit_full)
+
+# Extract F-test values
+f_value <- anova_result[2, "F"]
+p_value_f <- anova_result[2, "Pr(>F)"]
+df1 <- anova_result[2, "Df"]
+df2 <- anova_result[2, "Res.Df"]
+
+# Perform t-test to check the results
+t_value <- summary(fit_full)$coefficients["Col_DM_M1", "t value"]
+p_value <- summary(fit_full)$coefficients["Col_DM_M1", "Pr(>|t|)"]
+df_t <- summary(fit_full)$df[2]
+
+# Display the results
+print("T-Test:")
+print(c("t value" = t_value, "p-value" = p_value, "df" = df_t))
+
+print("F-Test:")
+print(c("F value" = f_value, "p-value" = p_value_f, "df1" = df1, "df2" = df2))
+
+# Check if the p-values are the same for t-test and F-test
+print("Are p-values the same for t-test and F-test?")
+print(all.equal(p_value, p_value_f))
+
+# Calculate squared t-statistic and compare with F-statistic
+squared_t_statistic = t_value^2
+print("Squared t-statistic:")
+print(squared_t_statistic)
+
+print("F-Statstic:")
+print(f_value)
+
+# Check if the squared t-statistic is the same as the F-statistic
+print("Are squared t-statistic and F-statistic the same?")
+print(all.equal(squared_t_statistic, f_value))
+```

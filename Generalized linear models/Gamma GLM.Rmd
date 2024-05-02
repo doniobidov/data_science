@@ -1,0 +1,204 @@
+---
+title: 'MA5732-GLMs Module 6 Homework #1'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+library(GLMsData)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+
+# Load the dataset
+data(leukwbc)
+data(rrates)
+```
+
+# Problem 6.1
+
+## Exercise 1-4
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("6_1.jpg")
+```
+
+# Problem 6.2
+
+## Exercise 1
+
+```{r}
+# Turn into a factor
+leukwbc$AG <- factor(leukwbc$AG)
+                     
+# Plot survival time against WBC, distinguishing between ag-positive and ag-negative patients
+plot(Time ~ WBC, data = leukwbc, col = AG, pch = as.integer(AG), 
+     xlab = "White Blood Cell Count (WBC)", ylab = "Survival Time (weeks)")
+legend("topright", legend = c("AG Positive", "AG Negative"), col = 1:2, pch = 1:2)
+```
+
+As WBC goes up, survival time decreases. The survival time for AG positive seems to be higher than for AG negative.
+
+## Exercise 2
+
+```{r}
+# Use log10(WBC) instead of WBC
+plot(Time ~ log10(WBC), data = leukwbc, col = AG, pch = as.integer(AG), 
+     xlab = "Log10(White Blood Cell Count)", ylab = "Survival Time (weeks)")
+legend("topright", legend = c("AG Positive", "AG Negative"), col = 1:2, pch = 1:2)
+```
+
+**log10(WBC) is likely to be a better choice as an explanatory variable, possibly because mean-variance relationship becomes more similar between AG positive and AG negative levels.**
+
+## Exercise 3
+
+```{r}
+# Fit a Gamma GLM with logarithmic link function including interaction term
+gamma_model_inter <- glm(Time ~ AG * log10(WBC), family = Gamma(link = "log"), data = leukwbc)
+summary(gamma_model_inter)['coefficients']
+```
+
+**The interaction term between AG and log10(WBC) is not significant according to Wald's t-test.**
+
+## Exercise 4
+
+```{r}
+# Fit a Gamma GLM with logarithmic link function without the interaction term
+gamma_model <- glm(Time ~ AG + log10(WBC), family = Gamma(link = "log"), data = leukwbc)
+summary(gamma_model)['coefficients']
+```
+
+```{r}
+# Q-Q plot of standardized deviance residuals
+plot(qqnorm(rstandard(gamma_model)), main = "Q-Q Plot of Standardized Deviance Residuals")
+qqline(rstandard(gamma_model))
+```
+
+**Assumptions checked:** Check the random component. Determine if the choice of distribution is appropriate.
+**Patterns:** Follows a straight line.
+**The GLM assumptions checked are satisfied or violated**: Not violated. The plot shows that using a gamma GLM is reasonable.
+
+```{r}
+# Scatter plot of Cook’s distance
+plot(cooks.distance(gamma_model), main = "Scatter Plot of Cook's Distances")
+```
+
+**Assumptions checked:** check if there are any potential influential observations.
+**The GLM assumptions checked are satisfied or violated**: Not violated. All observations have the Cook’s distance less than 1, so there are no potential influential observations.
+
+## Exercise 5
+
+```{r}
+# Plot the fitted lines for each ag-factor
+plot(Time ~ log10(WBC), data = leukwbc, col = AG, pch = as.integer(AG), 
+     xlab = "Log10(White Blood Cell Count)", ylab = "Survival Time (weeks)")
+legend("topright", legend = c("AG Positive", "AG Negative"), col = 1:2, pch = 1:2)
+
+# Add fitted lines
+lines(predict(gamma_model, newdata = data.frame(WBC = seq(min(leukwbc$WBC), max(leukwbc$WBC), length.out = 100), AG = factor(1)), type = "response") ~ log10(seq(min(leukwbc$WBC), max(leukwbc$WBC), length.out = 100)), col = "blue")
+lines(predict(gamma_model, newdata = data.frame(WBC = seq(min(leukwbc$WBC), max(leukwbc$WBC), length.out = 100), AG = factor(2)), type = "response") ~ log10(seq(min(leukwbc$WBC), max(leukwbc$WBC), length.out = 100)), col = "red")
+```
+
+**As suspected, the survival time for AG negative level is significantly lower than for AG positive level. However, the survival time is decreasing with a higher rate as WBC goes up for the AG positive level.**
+
+## Exercise 6
+
+```{r}
+# Pearson estimate of dispersion
+summary(gamma_model)$dispersion
+sum(resid(gamma_model, type = "pearson")^2) / df.residual(gamma_model)
+```
+
+**Pearson estimate of dispersion is roughly equal to 1, so exponential distribution (gamma distribution with dispersion of 1) is a reasonable choice.**
+
+# Problem 6.3
+
+## Exercise 1
+
+```{r}
+# Turn into a factor
+rrates$Temp <- factor(rrates$Temp)
+
+# Plot the reaction rate against oxygen concentration, distinguishing between temperatures
+plot(Rate ~ Conc.O, data = rrates, col = Temp, pch = as.integer(Temp), 
+     xlab = "Oxygen Concentration", ylab = "Reaction Rate")
+legend("topright", legend = c("Temp. 623", "Temp. 648", "Temp. 673"), col = 1:3, pch = 1:3)
+```
+
+**For temperature 673, variance of reaction rate seems to be increasing as oxygen concentration goes up. Overall, reaction rate increases as oxygen concentration goes up. Moreover, reaction rate is higher for higher temperatures.**
+
+## Exercise 2
+
+**log(mu) = 1 + 0.02x - 1/x seems to be suitable (log link function).**
+
+**1/mu = 1 + 1/x seems to be suitable (inverse link function).**
+
+## Exercise 3
+
+```{r}
+# Fit the first model with suggested link function: log(mu) = 1 + x - 1/x
+model1 <- glm(Rate ~ Conc.O + I(1 / Conc.O) + Temp, family = inverse.gaussian(link='log'), data = rrates)
+
+# Fit the second model with suggested link function: 1/mu = 1 + 1/x
+model2 <- glm(Rate ~ I(1 / Conc.O) + Temp, family = inverse.gaussian(link='inverse'), data = rrates)
+
+# Predicted values for model 1
+rrates$predicted1 <- predict(model1, type = "response")
+
+# Predicted values for model 2
+rrates$predicted2 <- predict(model2, type = "response")
+```
+
+```{r}
+# Plot the fitted systematic components for model 1
+plot(Rate ~ Conc.O, data = rrates, col = Temp, pch = as.integer(Temp), 
+     xlab = "Oxygen Concentration", ylab = "Reaction Rate")
+lines(rrates$Conc.O, rrates$predicted1, col = "red", lty = 3, lwd = 2)
+legend("topleft", legend = c("log(mu)=1+x-1/x"), col = c("red"), lty = c(1), lwd = 2)
+```
+
+```{r}
+# Plot the fitted systematic components for model 2
+plot(Rate ~ Conc.O, data = rrates, col = Temp, pch = as.integer(Temp), 
+     xlab = "Oxygen Concentration", ylab = "Reaction Rate")
+lines(rrates$Conc.O, rrates$predicted2, col = "blue", lty = 3, lwd = 2)
+legend("topleft", legend = c("1/mu=1+1/x"), col = c("blue"), lty = c(1), lwd = 2)
+```
+
+```{r}
+summary(model1)
+```
+
+```{r}
+summary(model2)
+```
+
+**Model 1: log(mu) = 1 + x - 1/x is better in terms of both AIC and residual deviance.**
+
+## Exercise 4
+
+```{r}
+# Create separate datasets for each temperature
+rrates_temp1 <- subset(rrates, Temp == "623")
+rrates_temp2 <- subset(rrates, Temp == "648")
+rrates_temp3 <- subset(rrates, Temp == "673")
+
+# Fit GLM for each temperature
+model_temp1 <- glm(Rate ~ Conc.O + I(1 / Conc.O), family = inverse.gaussian(link='log'), data = rrates_temp1)
+model_temp2 <- glm(Rate ~ Conc.O + I(1 / Conc.O), family = inverse.gaussian(link='log'), data = rrates_temp2)
+model_temp3 <- glm(Rate ~ Conc.O + I(1 / Conc.O), family = inverse.gaussian(link='log'), data = rrates_temp3)
+
+# Check if dispersion parameter is approximately constant
+summary(model_temp1)$dispersion
+summary(model_temp2)$dispersion
+summary(model_temp3)$dispersion
+```
+
+**Pearson estimate of dispersion is very small for each model and is approximately constant.**

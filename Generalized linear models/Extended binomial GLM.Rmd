@@ -1,0 +1,218 @@
+---
+title: 'MA5732-GLMs Module 4 Homework #2'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+library(GLMsData)
+library(statmod)
+library(MASS)
+library(ggplot2)
+library(tidyverse)
+
+# Load the dataset
+data(germ)
+data(germBin)
+```
+
+# Problem 4.7
+
+## Exercise 1
+
+```{r}
+# Create a dataframe
+data <- tibble(
+  Substance = c(rep("A", 4), rep("B", 5)),
+  Dose = c(1.0, 20.0, 100.0, 200.0, 1.0, 62.5, 125.0, 250.0, 500.0),
+  No_cell_Samples = c(400, 200, 200, 200, 400, 200, 200, 200, 200),
+  No_Cells_Aberrant = c(3, 5, 14, 4, 5, 2, 2, 4, 7)
+)
+
+data$Substance <- factor(data$Substance)
+```
+
+```{r}
+# Fit a binomial GLM
+model <- glm(cbind(No_Cells_Aberrant, No_cell_Samples - No_Cells_Aberrant) ~ Substance + Dose, data = data, family = binomial(link = "logit"))
+
+# Summarize the model
+summary(model)
+```
+
+```{r}
+# Test statistic for Substance B
+z_statistic <- coef(summary(model))["SubstanceB", "z value"]
+
+# Extract p-value for Substance B
+p_value <- coef(summary(model))["SubstanceB", "Pr(>|z|)"]
+
+# Print
+cat("Wald Z test:\n")
+cat("Z test statistic:", z_statistic, "\n")
+cat("P-value for Substance B:", p_value, "\n")
+```
+
+**Conclusion: there is a significant difference between substance a and substance b.**
+
+## Exercise 2
+
+```{r}
+# Fit a binomial GLM
+model_1 <- glm(cbind(No_Cells_Aberrant, No_cell_Samples - No_Cells_Aberrant) ~ Substance + log(Dose), data = data, family = binomial(link = "logit"))
+
+# Summarize the model
+summary(model_1)
+```
+
+**log(Dose) model: AIC = 49.123, residual deviance: 13.329**
+
+**Dose model: AIC = 52.448, residual deviance: 16.653**
+
+**Based on both AIC and residual deviance, the log(Dose) model is better**
+
+## Exercise 3
+
+```{r}
+# Extract coefficient for log(Dose)
+coefficient_log_dose <- coef(summary(model_1))["log(Dose)", "Estimate"]
+
+# Extract standard error for log(Dose)
+se_log_dose <- coef(summary(model_1))["log(Dose)", "Std. Error"]
+
+# Calculate 95% confidence interval for log(Dose)
+lower_ci_log_dose <- coefficient_log_dose - 1.96 * se_log_dose
+upper_ci_log_dose <- coefficient_log_dose + 1.96 * se_log_dose
+
+# Print coefficient and its 95% confidence interval
+cat("Coefficient for log(Dose):", coefficient_log_dose, "\n")
+cat("95% Confidence Interval for log(Dose): [", lower_ci_log_dose, ",", upper_ci_log_dose, "]\n")
+```
+
+```{r}
+# Calculate odds ratio for dose increase from 20 to 200
+odds_ratio <- exp(coefficient_log_dose * (log(200) - log(20)))
+
+# Print odds ratio
+cat("If dose increases from 20 to 200, odds increase by a factor :", odds_ratio, "\n")
+```
+
+## Exercise 4
+
+**The presence of multiple substances complicates the dose-response relationship, making it difficult to interpret the ED50 accurately.**
+
+# Problem 4.8
+
+## Exercise 1
+
+```{r}
+# Fit logistic regression model using binomial GLM
+binomial_model <- glm(Germ/Total ~ Seeds + Extract, data = germ, family = binomial(link = "logit"), weights = Total)
+# binomial_model <- glm(cbind(Germ, Total-Germ) ~ Seeds + Extract, data = germ, family = binomial(link = "logit"))
+
+# Fit logistic regression model using Bernoulli GLM
+bernoulli_model <- glm(factor(Result, levels = c("NotGerm", "Germ")) ~ Seeds + Extract, data = germBin, family = binomial(link = "logit"))
+```
+
+```{r}
+# Parameter estimates and standard errors for binomial GLM
+cat("Parameter Estimates and Standard Errors for Binomial GLM:\n")
+print(summary(binomial_model)$coefficients)
+
+# Parameter estimates and standard errors for Bernoulli GLM
+cat("\nParameter Estimates and Standard Errors for Bernoulli GLM:\n")
+print(summary(bernoulli_model)$coefficients)
+```
+
+**Parameter estimates and standard errors from two models are the same.**
+
+## Exercise 2
+
+```{r}
+# Extracting null and residual deviances from the summary of binomial model
+binomial_null_deviance <- summary(binomial_model)$null.deviance
+binomial_residual_deviance <- summary(binomial_model)$deviance
+
+# Display the results
+cat("Residual Deviance, Null Deviance, and Difference for Binomial GLM:\n")
+cat("Residual Deviance:", binomial_residual_deviance, "\n")
+cat("Null Deviance:", binomial_null_deviance, "\n")
+cat("Difference:", binomial_null_deviance - binomial_residual_deviance, "\n\n")
+
+# Extracting null and residual deviances from the summary of bernoulli model
+bernoulli_null_deviance <- summary(bernoulli_model)$null.deviance
+bernoulli_residual_deviance <- summary(bernoulli_model)$deviance
+
+# Display the results
+cat("Residual Deviance, Null Deviance, and Difference for Bernoulli GLM:\n")
+cat("Residual Deviance:", bernoulli_residual_deviance, "\n")
+cat("Null Deviance:", bernoulli_null_deviance, "\n")
+cat("Difference:", bernoulli_null_deviance - bernoulli_residual_deviance, "\n")
+```
+
+**Although the residual deviances and the null deviances are different, their differences are the same.**
+
+## Exercise 3
+
+```{r}
+# Perform sequential likelihood-ratio test for binomial model
+binomial_anova <- anova(binomial_model, test = "Chisq", dispersion = 1)
+
+# Print results for binomial model
+cat("Sequential Likelihood-Ratio Test for Binomial GLM:\n")
+print(binomial_anova)
+
+# Perform sequential likelihood-ratio test for bernoulli model
+bernoulli_anova <- anova(bernoulli_model, test = "Chisq", dispersion = 1)
+
+# Print results for bernoulli model
+cat("\nSequential Likelihood-Ratio Test for Bernoulli GLM:\n")
+print(bernoulli_anova)
+```
+
+**Although the residual deviances and the associated df are different, the p-values are the same.**
+
+## Exercise 5 (bonus)
+
+```{r}
+# Log-likelihood for binomial model
+binomial_log_likelihood <- logLik(binomial_model)
+
+# Log-likelihood for Bernoulli model
+bernoulli_log_likelihood <- logLik(bernoulli_model)
+
+# Print log-likelihoods
+cat("Log-Likelihood for Binomial Model:", binomial_log_likelihood, "\n")
+cat("Log-Likelihood for Bernoulli Model:", bernoulli_log_likelihood, "\n")
+
+# Difference of log-likelihoods
+log_likelihood_difference <- binomial_log_likelihood - bernoulli_log_likelihood
+
+# Print the difference
+cat("Difference of Log-Likelihoods (Binomial - Bernoulli):", log_likelihood_difference, "\n")
+```
+
+```{r}
+theoretical <- function(Germ, Total) {
+  sum_result <- 0
+  for (i in 1:length(Germ)) {
+    mi <- Total[i]
+    yi <- Germ[i] / Total[i]
+    sum_result <- sum_result + log(choose(mi, mi * yi))
+  }
+  return(sum_result)
+}
+
+# Calculate the sum
+theoretical_dif <- theoretical(germ$Germ, germ$Total)
+
+# Print the result
+cat("Theoretical difference:", theoretical_dif, "\n")
+```

@@ -1,0 +1,212 @@
+---
+title: 'MA5732-GLMs Module 4 Homework #1'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+library(GLMsData)
+library(statmod)
+library(MASS)
+library(ggplot2)
+
+# Load the dataset
+data(serum)
+data(belection)
+```
+
+# Problem 4.1
+
+## Exercise 1-9
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("4_1.jpg")
+```
+
+# Problem 4.2
+
+## Exercise 1-2
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("4_2.jpg")
+```
+
+# Problem 4.3
+
+## Exercise 1-2
+
+```{r, out.width = "100%", fig.align = "center"}
+# fit Binomial glm
+binom_glm <- glm(Survivors/Number ~ log(Dose), data = serum, 
+   family = binomial(link = "logit"), weights = Number)
+print(binom_glm)
+
+# estimate and standard error of ED50 
+ed50 <- dose.p(binom_glm, p = 0.5)
+print(ed50)
+```
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("4_3.jpg")
+```
+
+# Problem 4.4
+
+## Exercise 1-7
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("4_4_1.jpg")
+knitr::include_graphics("4_4_2.jpg")
+```
+
+# Problem 4.5
+
+## Exercise 1
+
+```{r, out.width = "100%", fig.align = "center"}
+# Fit logistic regression model
+binom_glm <- glm(Survivors/Number ~ log(Dose), data = serum, 
+   family = binomial(link = "logit"), weights = Number)
+
+# Show coefficient estimate, standard error, and p-value
+summary(binom_glm)$coefficients["log(Dose)", c("Estimate", "Std. Error", "Pr(>|z|)")]
+```
+
+**Log(Dose) is significant.**
+
+**For a 1 unit increase in log(Dose), the proportion of survivors to non-survivors (survivors/(1-survivors)) increases by a factor of exp(1.7094)**
+
+## Exercise 2
+
+```{r, out.width = "100%", fig.align = "center"}
+rW <- resid(binom_glm, type = "working") # working residuals
+lp <- predict(binom_glm) # linear predictor
+z <- rW + lp # working response
+
+# Plot working responses against linear predictors
+par(mfrow = c(1, 1)) # Resetting plotting layout
+plot(z ~ lp, las = 1, ylab = "Working responses, z", xlab = "Linear predictor")
+```
+
+**Assumptions checked:** systematic component: correct link function.
+**Patterns:** small curvature.
+**The GLM assumptions checked are satisfied or violated**: violated. Wrong link function.
+
+```{r, out.width = "100%", fig.align = "center"}
+# Obtain quantile residuals
+rQ <- qresid(binom_glm)
+
+# Q-Q plot of quantile residuals
+qqnorm(rQ, las = 1, main = "Q-Q plot of Quantile Residuals")
+qqline(rQ)
+```
+
+**Assumptions checked:** Check the random component. Determine if the choice of distribution is appropriate.
+**Patterns:** Does not follow a straight line.
+**The GLM assumptions checked are satisfied or violated**: Violated. The plot shows that using a Binomial GLM is not reasonable.
+
+## Exercise 3
+
+```{r, out.width = "100%", fig.align = "center"}
+# Predictions with standard errors
+predictions <- predict(binom_glm, se.fit = TRUE)
+fit <- predictions$fit
+se <- predictions$se.fit
+
+# Calculate 95% confidence intervals for mu
+z <- qnorm(0.975)
+lower <- fit - z * se
+upper <- fit + z * se
+
+# Plot data with fitted line and confidence intervals
+plot(log(serum$Dose), log(serum$Survivors/(serum$Number-serum$Survivors)), xlab = "log(Dose)", ylab = "log(Survival/Not Survival)")
+lines(log(serum$Dose), fit, col = "red")
+lines(log(serum$Dose), lower, col = "blue", lty = 2)
+lines(log(serum$Dose), upper, col = "blue", lty = 2)
+```
+
+```{r, out.width = "100%", fig.align = "center"}
+# Predictions with standard errors
+predictions <- predict(binom_glm, se.fit = TRUE, type = "response")
+fit <- predictions$fit
+se <- predictions$se.fit
+
+# Calculate 95% confidence intervals for mu
+z <- qnorm(0.975)
+lower <- fit - z * se
+upper <- fit + z * se
+
+# Plot data with fitted line and confidence intervals
+plot(log(serum$Dose), serum$Survivors/serum$Number, xlab = "log(Dose)", ylab = "Survival Probability")
+lines(log(serum$Dose), fit, col = "red")
+lines(log(serum$Dose), lower, col = "blue", lty = 2)
+lines(log(serum$Dose), upper, col = "blue", lty = 2)
+```
+
+**There is a pattern in the actual points that the GLM model is not capturing. Therefore, this model might have problems generalizing to more data.**
+
+# Problem 4.6
+
+## Exercise 1
+
+```{r, out.width = "100%", fig.align = "center"}
+# Plot the proportion of female candidates against the Party
+ggplot(belection, aes(x = Party, y = Females / (Females + Males))) +
+  geom_boxplot() +
+  labs(title = "Proportion of Female Candidates by Party")
+```
+
+**Mean and variance in the conservative party is clearly different than that of the other parties. If it was not for that party, I would not be too concerned about mean and variance changing from party to party.**
+
+## Exercise 2
+
+```{r, out.width = "100%", fig.align = "center"}
+# Plot the proportion of female candidates against the Region
+ggplot(belection, aes(x = Region, y = Females / (Females + Males))) +
+  geom_boxplot() +
+  labs(title = "Proportion of Female Candidates by Region")
+```
+
+***Mean and variance of the response is clearly different throughout different regions.*
+
+## Exercise 3
+
+```{r, out.width = "100%", fig.align = "center"}
+logit_model <- glm(cbind(Females, Males) ~ Party + Region + Party * Region, data = belection, binomial(link = "logit"))
+# logit_model <- glm(Females/(Females + Males) ~ Party + Region + Party * Region, data = belection, binomial(link = "logit"), weights=(Females + Males))
+```
+
+```{r, out.width = "100%", fig.align = "center"}
+summary(logit_model)
+```
+
+**Test statistics and p_values are given above. None of the regions and the interaction terms are significant. In fact, only green party is significant.**
+
+## Exercise 4
+
+```{r, out.width = "100%", fig.align = "center"}
+logit_model <- glm(cbind(Females, Males) ~ Party, data = belection, binomial(link = "logit"))
+```
+
+```{r, out.width = "100%", fig.align = "center"}
+# Pearson stat for goodness-of-fit
+df.res <- df.residual(logit_model)
+gm.pearson <- sum(resid(logit_model, type = "pearson")^2) # pearson
+pearson.p <- 1 - pchisq(gm.pearson, df = df.res)
+c(df.res = df.res, pearson = gm.pearson, p = pearson.p)
+```
+
+**The Pearson test statistic is roughly equal to the the residual degree of freedom. Therefore, overdispersion does not seem to be the case.**
+
+## Exercise 5-7
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("4_6.jpg")
+```

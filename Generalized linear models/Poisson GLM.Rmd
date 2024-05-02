@@ -1,0 +1,224 @@
+---
+title: 'MA5732-GLMs Module 5 Homework #1'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+library(GLMsData)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+
+# Load the dataset
+data(danishlc)
+data(grazing)
+```
+
+# Problem 5.1
+
+## Exercise 1
+
+```{r}
+# Ensure age-order is preserved 
+danishlc$Age <- ordered(danishlc$Age, levels = c("40-54", "55-59", "60-64", "65-69", "70-74", ">74"))
+
+# Abbreviate city names
+# danishlc$City  <- abbreviate(danishlc$City, 1)
+
+# Treatment coding for ordered variable
+options(contrasts = c("contr.treatment", "contr.treatment"))
+
+# Fit Poisson GLM with City as explanatory variable
+poisson_model <- glm(Cases ~ offset(log(Pop)) + City, family = poisson, data = danishlc)
+
+# Fit Binomial GLM with City as explanatory variable
+binomial_model <- glm(cbind(Cases, Pop - Cases) ~ City, family = binomial(link = "logit"), data = danishlc)
+```
+
+```{r}
+# Poisson GLM
+poisson_summary <- summary(poisson_model)
+poisson_wald <- poisson_summary$coefficients[-1, c(1, 2, 4)]  # Exclude intercept
+
+# Binomial GLM
+binomial_summary <- summary(binomial_model)
+binomial_wald <- binomial_summary$coefficients[-1, c(1, 2, 4)]  # Exclude intercept
+
+# Print estimates, standard errors, and p-values
+cat("Poisson GLM (Estimate, Std. Error, P-value):\n")
+print(poisson_wald)
+cat("\nBinomial GLM (Estimate, Std. Error, P-value):\n")
+print(binomial_wald)
+```
+
+## Exercise 2
+
+```{r}
+# Poisson GLM
+poisson_gof <- deviance(poisson_model)
+poisson_df <- df.residual(poisson_model)
+poisson_p_value <- 1 - pchisq(poisson_gof, poisson_df)
+
+# Binomial GLM
+binomial_gof <- deviance(binomial_model)
+binomial_df <- df.residual(binomial_model)
+binomial_p_value <- 1 - pchisq(binomial_gof, binomial_df)
+
+# Print test statistic, degrees of freedom, and p-value
+cat("\nPoisson GLM (Test Statistic, DF, P-value):\n")
+cat("Test Statistic:", poisson_gof, "\n")
+cat("Degrees of Freedom:", poisson_df, "\n")
+cat("P-value:", poisson_p_value, "\n")
+
+cat("\nBinomial GLM (Test Statistic, DF, P-value):\n")
+cat("Test Statistic:", binomial_gof, "\n")
+cat("Degrees of Freedom:", binomial_df, "\n")
+cat("P-value:", binomial_p_value, "\n")
+```
+
+## Exercise 3
+
+```{r}
+# Poisson GLM
+poisson_estimates <- predict(poisson_model) # log response
+poisson_estimated_proportion <- exp(poisson_estimates - log(danishlc$Pop))[c(1, 12)]
+
+# Binomial GLM
+binomial_estimates <- predict(binomial_model) # log odds
+binomial_estimated_proportion <- exp(binomial_estimates)[c(1, 12)]
+
+# Print estimated proportions
+cat("\nEstimated Proportion Cases/Pop for the 1st and 12th Observations:\n")
+cat("Poisson GLM:", poisson_estimated_proportion, "\n")
+cat("Binomial GLM:", binomial_estimated_proportion, "\n")
+```
+
+# Problem 5.2
+
+## Exercise 1-6
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("5_2_1.jpg")
+knitr::include_graphics("5_2_2.jpg")
+```
+
+# Problem 5.3
+
+## Exercise 1
+
+```{r}
+# Ensure order is preserved
+# grazing_grouped$When <- factor(grazing_grouped$When, levels = c("Before", "After"))
+grazing$When <- ordered(grazing$When, levels = c("Before", "After"))
+
+# Treatment coding for ordered variable
+options(contrasts = c("contr.treatment", "contr.treatment"))
+
+# Grouping by When and Grazed and calculating the sum of Birds
+grazing_grouped <- grazing %>%
+  group_by(When, Grazed) %>%
+  summarise(Total_Birds = sum(Birds))
+
+# Plot
+ggplot(data = grazing_grouped, aes(x = When, y = Total_Birds, color = Grazed, group = Grazed)) +
+  geom_line(aes(linetype = Grazed)) +
+  geom_point() +
+  labs(x = "When", y = "Birds Count") +
+  theme_minimal()
+```
+
+**The number of birds went up after removing the feral herbivores.**
+
+**The number of birds went down after removing the reference herbivores.**
+
+**There were more birds at the side with the reference herbivores than at the side with feral herbivores. However, after removing the herbivores, the proportion changed. It shifted in favor of the side where feral herbivores used to reside.**
+
+## Exercise 2
+
+```{r}
+# Fit Poisson GLM
+poisson_model <- glm(Birds ~ When * Grazed, family = poisson(link='log'), data = grazing)
+
+# Estimate dispersion parameter (deviance)
+res.dev <- deviance(poisson_model)
+res.df <- df.residual(poisson_model)
+dispersion_hat <- res.dev/res.df
+
+# Print dispersion parameter
+print(paste("Dispersion Parameter Hat:", dispersion_hat))
+# Goodness-of-fit test: deviance
+c("Goodness-of-fit test:", dev = res.dev, df = res.df, p = 1 - pchisq(res.dev, df = res.df))
+```
+
+```{r}
+# Calculate sample mean and variance for each combination of explanatory variables
+sample_stats <- aggregate(Birds ~ When * Grazed, data = grazing, 
+                          FUN = function(x) c(mean = mean(x), variance = var(x)))
+
+# Extract mean and variance values
+group_mean <- sample_stats$Birds[, "mean"]
+group_variance <- sample_stats$Birds[, "variance"]
+
+# Take the logarithm of mean and variance
+log_group_mean <- log(group_mean)
+log_group_variance <- log(group_variance)
+
+# Create the plot
+plot(log_group_mean, log_group_variance, 
+     xlab = "log of Group mean", ylab = "log of Group variance",
+     main = "Log-log Plot of Group Mean vs Variance")
+
+# Add grid lines
+grid()
+```
+
+**Overdispersion is clearly present.**
+
+## Exercise 3
+
+```{r}
+# Fit quasi-Poisson model
+quasi_poisson_model <- glm(Birds ~ When * Grazed, family = "quasipoisson", data = grazing)
+
+# Fit negative binomial GLM
+negative_binomial_model <- glm.nb(Birds ~ When * Grazed, data = grazing, link = log)
+
+# Extract coefficients, standard errors, and p-values
+quasi_poisson_summary <- summary(quasi_poisson_model)$coefficients[-1, ]
+negative_binomial_summary <- summary(negative_binomial_model)$coefficients[-1, ]
+
+# Print results
+print("Poisson Model:")
+print(summary(poisson_model)$coefficients[-1, ])
+print("Quasi-Poisson Model:")
+print(quasi_poisson_summary)
+print("Negative Binomial Model:")
+print(negative_binomial_summary)
+```
+
+**Coefficient estimates are the same. Standard errors and conclusions are different (Poisson model incorrectly gave too small standard errors).**
+
+## Exercise 4
+
+```{r}
+# Extract residual deviance for each model
+residual_deviance <- c(
+  Poisson = deviance(poisson_model),
+  Quasi_Poisson = deviance(quasi_poisson_model),
+  Negative_Binomial = deviance(negative_binomial_model)
+)
+
+# Find the model with the lowest residual deviance
+best_model <- names(residual_deviance)[which.min(residual_deviance)]
+
+# Print the best model
+print(paste("Best Model based on Residual Deviance:", best_model))
+```

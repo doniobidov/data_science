@@ -1,0 +1,93 @@
+---
+title: 'MA5732-GLMs Module 2 Homework #2'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("GLMsData")
+library(GLMsData)
+library(ggplot2)
+library(dplyr)
+
+# Load the dataset
+data(nambeware)
+```
+
+# Problem 2.3
+
+## Exercises 1-6
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("2_3.jpg")
+```
+
+# Problem 2.4
+
+## Exercise 1
+
+```{r}
+# Plot price against diameter
+ggplot(nambeware, aes(x = Diam, y = Price)) +
+  geom_point() +
+  labs(x = "Diameter", y = "Price") +
+  ggtitle("Price vs. Diameter")
+```
+
+**As the diameter increases, the price also increases. The relationship does not seem to be linear. The variance of price also gets larger with bigger diameter.**
+
+## Exercise 2
+
+```{r}
+# Divide samples into different groups according to diameter
+nambeware <- mutate(nambeware, Group = cut(Diam, breaks = c(-Inf, 8.25, 10.25, 12.25, 14.25, Inf), 
+                                           labels = c("x≤8.25", "8.25<x≤10.25", "10.25<x≤12.25", "12.25<x≤14.25", "14.25<x")))
+
+# Calculate sample mean and sample variance for each group
+summary_stats <- nambeware %>%
+  group_by(Group) %>%
+  summarise(Sample_Mean = mean(Price),
+            Sample_Variance = var(Price),
+            Sample_Size = n())
+
+# Print the summary statistics table
+print(summary_stats)
+
+# Plot the scatter plot of logarithm of group variances against logarithm of group means
+ggplot(summary_stats, aes(x = log(Sample_Mean), y = log(Sample_Variance))) +
+  geom_point() +
+  labs(x = "Log(Group Mean)", y = "Log(Group Variance)") +
+  ggtitle("Scatter Plot of Log(Group Variances) vs. Log(Group Means)")
+```
+
+## Exercise 3
+
+```{r}
+# Fit a linear model
+lm_model <- lm(log(Sample_Variance) ~ log(Sample_Mean), data = summary_stats)
+
+# Extract coefficients
+a <- coef(lm_model)[1]
+b <- coef(lm_model)[2]
+
+# Print coefficients
+cat("Intercept (a):", a, "\n")
+cat("Slope (b):", b, "\n")
+```
+
+**The relationship between log(variance) and log(mean) is linear with an sloe of 2.33. This means that as mean price increases by a single unit, the variance of price increases by a factor of about 2. This behavior is typical for a *Gamma* distribution.**
+
+# Problem 2.5
+
+## Exercises 1-4
+
+```{r, out.width = "80%", out.height = "80%", fig.align = "center"}
+knitr::include_graphics("2_5.jpg")
+```

@@ -1,0 +1,233 @@
+---
+title: 'MA5732-GLMs Module 3 Homework #3'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("statmod")
+library(GLMsData)
+library(statmod)
+
+# Load the dataset
+data(seabirds)
+data(nambeware)
+```
+
+# Problem 3.6
+
+## Exercise 1-5
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("3_6_1.jpg")
+knitr::include_graphics("3_6_2.jpg")
+```
+
+# Exercise 3.7
+
+## 1
+
+```{r}
+# Fit the Poisson GLM model
+glm_model <- glm(Count ~ Species + factor(Quadrat), data = seabirds, family = poisson(link = "log"))
+
+# Extract response residuals for 2nd and 4th observations
+resid_2nd <- resid(glm_model, type = "response")[2]  # Response residual for 2nd observation
+resid_4th <- resid(glm_model, type = "response")[4]  # Response residual for 4th observation
+
+pearson_2nd <- residuals(glm_model, type = "pearson")[2]  # Pearson residual for 2nd observation
+pearson_4th <- residuals(glm_model, type = "pearson")[4]  # Pearson residual for 4th observation
+
+deviance_2nd <- residuals(glm_model, type = "deviance")[2]  # Deviance residual for 2nd observation
+deviance_4th <- residuals(glm_model, type = "deviance")[4]  # Deviance residual for 4th observation
+
+quantile_2nd <- qresid(glm_model)[2]  # Quantile residual for 2nd observation
+quantile_4th <- qresid(glm_model)[4]  # Quantile residual for 4th observation
+
+cat("Response residual for the 2nd observation:", resid_2nd, "\n")
+cat("Response residual for the 4th observation:", resid_4th, "\n")
+cat("Pearson residual for the 2nd observation:", pearson_2nd, "\n")
+cat("Pearson residual for the 4th observation:", pearson_4th, "\n")
+cat("Deviance residual for the 2nd observation:", deviance_2nd, "\n")
+cat("Deviance residual for the 4th observation:", deviance_4th, "\n")
+cat("Quantile residual for the 2nd observation:", quantile_2nd, "\n")
+cat("Quantile residual for the 4th observation:", quantile_4th, "\n")
+```
+
+## 2
+
+```{r}
+# Find the minimum value of the response variable
+min_response <- min(seabirds$Count)
+
+# Print the minimum value
+cat("Minimum response:", min_response, "\n")
+cat("Sorted response:", sort(seabirds$Count), "\n")
+```
+
+The approximate distribution of the Pearson and deviance residuals are expected to be **poor**.
+
+## 3
+
+```{r}
+# Obtain standardized deviance residuals
+deviance_residuals <- rstandard(glm_model, type = "deviance")
+
+# Obtain fitted values
+fitted_values <- fitted(glm_model)
+
+# Plot standardized deviance residuals against fitted values
+plot(fitted_values, deviance_residuals, 
+     xlab = "Fitted Values", ylab = "Standardized Deviance Residuals",
+     main = "Standardized Deviance Residuals vs Fitted Values")
+
+# Add a smooth line
+scatter.smooth(fitted_values, deviance_residuals)
+```
+
+```{r}
+# Plot standardized deviance residuals against fitted values transformed to the constant-information scale
+fitted_values_transformed <- sqrt(fitted_values)
+plot(fitted_values_transformed, deviance_residuals, 
+     xlab = "Transformed Fitted Values", ylab = "Standardized Deviance Residuals",
+     main = "Standardized Deviance Residuals vs Transformed Fitted Values")
+
+# Add a smooth line
+scatter.smooth(fitted_values_transformed, deviance_residuals)
+```
+
+**I don't see any pattern in the plots. However, these plots are not reliable as minimum of the response is equal to 0.**
+
+## 4
+
+```{r}
+# Obtain quantile residuals
+quantile_residuals <- qresid(glm_model)
+
+# Plot quantile residuals against fitted values
+plot(fitted_values, quantile_residuals, 
+     xlab = "Fitted Values", ylab = "Quantile Residuals",
+     main = "Quantile Residuals vs Fitted Values")
+
+# Add a smooth line
+scatter.smooth(fitted_values, quantile_residuals)
+```
+
+```{r}
+# Plot quantile residuals against fitted values transformed to the constant-information scale
+plot(fitted_values_transformed, quantile_residuals, 
+     xlab = "Transformed Fitted Values", ylab = "Quantile Residuals",
+     main = "Quantile Residuals vs Transformed Fitted Values")
+
+# Add a smooth line
+scatter.smooth(fitted_values_transformed, quantile_residuals)
+```
+
+**There are no patterns in these plots, which indicates about no violations in systematic component including link function, important covariates, and transformation of quantitative variables.**
+
+## 5
+
+**Using either the standardized deviance or standardized quantile residuals is preferred in these plots because they have approximately constant variance. Standardized quantile residuals are especially encouraged for discrete EDMs to avoid distracting patterns in the residuals.**
+
+# Exercise 3.8
+
+## 1
+
+```{r}
+# Fit the Gamma GLM model
+glm_model <- glm(Price ~ Diam + Type, data = nambeware, family = Gamma(link = "log"))
+
+# Obtain standardized deviance residuals
+deviance_residuals <- rstandard(glm_model, type = "deviance")
+
+# Obtain fitted values
+fitted_values <- fitted(glm_model)
+
+# Transform fitted values to constant-information scale
+fitted_values_transformed <- log(fitted_values)
+
+# Plot standardized deviance residuals against transformed fitted values
+par(mfrow = c(1, 1)) # Resetting plotting layout
+scatter.smooth(fitted_values_transformed, deviance_residuals, 
+               xlab = "Transformed Fitted Values", ylab = "Standardized Deviance Residuals",
+               main = "Standardized Deviance Residuals vs Transformed Fitted Values")
+```
+
+**Assumptions checked:** systematic component: correct link function, usage of all the important covariates, and correct transformation of quantitative variables.
+**Patterns:** slight parabolic curvature
+**The GLM assumptions checked are satisfied or violated**: possibly violated.
+
+## 2
+
+```{r}
+rW <- resid(glm_model, type = "working") # working residuals
+lp <- predict(glm_model) # linear predictor
+z <- rW + lp # working response
+
+# Plot working responses against linear predictors
+par(mfrow = c(1, 1)) # Resetting plotting layout
+scatter.smooth(z ~ lp, las = 1, ylab = "Working responses, z", xlab = "Linear predictor")
+```
+
+**Assumptions checked:** systematic component: correct link function.
+**Patterns:** curvature.
+**The GLM assumptions checked are satisfied or violated**: violated. Wrong link function.
+
+## 3
+
+```{r}
+rP <- resid(glm_model, type = "partial") # partial residuals
+termplot(glm_model, partial.resid = TRUE, las = 1)
+```
+
+**Only look at the diam covariate**
+**Assumptions checked:** covariate diameter is included on the correct/incorrect scale.
+**Patterns:** No curvature.
+**The GLM assumptions checked are satisfied or violated**: Not violated.
+
+## 4
+
+```{r}
+# Plot Q-Q plot of standardized deviance residuals
+par(mfrow = c(1, 1)) # Resetting plotting layout
+qqnorm(deviance_residuals, 
+       main = "Q-Q Plot of Standardized Deviance Residuals")
+qqline(deviance_residuals)
+```
+
+```{r}
+rQ <- qresid(glm_model)
+qqnorm(rQ, las = 1, main = "Q-Q plot of Quantile Residuals")
+qqline(rQ)
+```
+
+**Assumptions checked:** check the random component. Determine if the choice of distribution is appropriate.
+**Patterns:** Mostly follows a straight line. One outlier at the end.
+**The GLM assumptions checked are satisfied or violated**: Not violated. The plot shows that using a Gamma GLM seems reasonable.
+
+## 5
+
+```{r}
+# Obtain Cook's distances
+cooks_distances <- cooks.distance(glm_model)
+
+# Plot Cook's distances
+par(mfrow = c(1, 1)) # Resetting plotting layout
+plot(cooks_distances, 
+     xlab = "Observation Number", ylab = "Cook's Distance",
+     main = "Cook's Distance")
+```
+
+```{r}
+sort(cooks.distance(glm_model)) 
+```
+
+**Assumptions checked:** check if there are any potential influential observations.
+**The GLM assumptions checked are satisfied or violated**: Not violated. All observations have the Cook’s distance less than 1, so there are no potential influential observations.

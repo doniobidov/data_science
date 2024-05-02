@@ -1,0 +1,126 @@
+---
+title: 'MA5732-GLMs Module 3 Homework #1'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("GLMsData")
+library(GLMsData)
+
+# Load the dataset
+data(trees)
+```
+
+# Problem 3.1
+
+## Exercise 1, 2
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("3_1_2.jpg")
+```
+
+## Exercise 3
+
+```{r}
+# Set up X, y
+X <- cbind(1, log(trees$Girth))
+y <- trees$Volume
+
+epsilon <- 1e-8
+n.max <- 14
+res.est <- matrix(NA, ncol = ncol(X) + 1, nrow = n.max)
+res.est <- data.frame(res.est)
+names(res.est) <- c(paste("beta_", c(1:ncol(X)) - 1), "error")
+
+# Run 1
+beta.old <- c(-1, 1) # initialization
+res.est[1, ] <- c(beta.old, NA)
+
+# Create an empty dataframe to store results
+results <- data.frame(matrix(NA, ncol = 6, nrow = n.max - 1))
+colnames(results) <- c("Beta0_Run1", "Beta1_Run1", "Diff_Run1", "Beta0_Run2", "Beta1_Run2", "Diff_Run2")
+
+for(i in 2:n.max) 
+{
+   # update mu, weight, etc.
+   yeta.new <- as.vector(beta.old %*% t(X))
+   mu.new <- exp(yeta.new)
+   w.new <- diag(1, length(mu.new))
+   link.d <- diag(1 / mu.new)
+   fisher.new <- t(X) %*% w.new %*% X
+   
+   # update beta
+   tmp <- solve(fisher.new) %*% t(X) %*% w.new %*% link.d
+   beta.new <- beta.old + tmp %*% (y - mu.new) 
+   beta.new <- as.vector(beta.new)
+   # check differences
+   error <- sum(abs(beta.new - beta.old))
+   res.est[i, ] <- c(beta.new, error)
+   
+   # Store results in the results dataframe
+   results[i-1, "Beta0_Run1"] <- beta.new[1]
+   results[i-1, "Beta1_Run1"] <- beta.new[2]
+   results[i-1, "Diff_Run1"] <- error
+   
+   cat("iteration and diff", i - 1, error, "\n") 
+   if(error <= epsilon) {
+      n <- i
+      break
+   }
+   
+   # replace beta by new values
+   beta.old <- beta.new
+}
+
+# Run 2
+beta.old <- c(1, 1) # Initial values for beta0 and beta1
+
+for(i in 2:n.max) 
+{
+   # update mu, weight, etc.
+   yeta.new <- as.vector(beta.old %*% t(X))
+   mu.new <- exp(yeta.new)
+   w.new <- diag(1, length(mu.new))
+   link.d <- diag(1 / mu.new)
+   fisher.new <- t(X) %*% w.new %*% X
+   
+   # update beta
+   tmp <- solve(fisher.new) %*% t(X) %*% w.new %*% link.d
+   beta.new <- beta.old + tmp %*% (y - mu.new) 
+   beta.new <- as.vector(beta.new)
+   # check differences
+   error <- sum(abs(beta.new - beta.old))
+   res.est[i, ] <- c(beta.new, error)
+   
+   # Store results in the results dataframe
+   results[i-1, "Beta0_Run2"] <- beta.new[1]
+   results[i-1, "Beta1_Run2"] <- beta.new[2]
+   results[i-1, "Diff_Run2"] <- error
+   
+   cat("iteration and diff", i - 1, error, "\n") 
+   if(error <= epsilon) {
+      n <- i
+      break
+   }
+   
+   # replace beta by new values
+   beta.old <- beta.new
+}
+
+# Print the results dataframe
+print(results)
+```
+
+## Exercise 4
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("3_4.jpg")
+```

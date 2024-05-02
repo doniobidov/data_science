@@ -1,0 +1,282 @@
+---
+title: 'Final Project'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("caret")
+library(GLMsData)
+library(statmod)
+library(MASS)
+library(ggplot2)
+library(caret)
+
+# Load the dataset
+data <- read.csv("card_transdata.csv")
+```
+
+# Data preparation
+
+```{r}
+# Convert specified columns to factors
+data$repeat_retailer <- factor(data$repeat_retailer)
+data$used_chip <- factor(data$used_chip)
+data$used_pin_number <- factor(data$used_pin_number)
+data$online_order <- factor(data$online_order)
+data$fraud <- factor(data$fraud)
+```
+
+```{r}
+# Set the seed for reproducibility
+set.seed(123)
+
+# Split the data into training (5%) and testing (95%) sets
+# I am using only a portion of data to speed up the training
+train_index <- createDataPartition(data$fraud, p = 0.05, list = FALSE)
+train_data <- data[train_index, ]
+temp_test_data <- data[-train_index, ]
+
+# Get the final test set
+# Subset data to get 5 samples with fraud = 0
+fraud_0_samples <- temp_test_data[temp_test_data$fraud == "0", ]
+fraud_0_samples <- fraud_0_samples[sample(nrow(fraud_0_samples), 5), ]
+
+# Subset data to get 5 samples with fraud = 1
+fraud_1_samples <- temp_test_data[temp_test_data$fraud == "1", ]
+fraud_1_samples <- fraud_1_samples[sample(nrow(fraud_1_samples), 5), ]
+
+# Combine the samples into test_data
+test_data <- rbind(fraud_0_samples, fraud_1_samples)
+```
+
+# Exploratory data analysis
+
+```{r}
+summary(train_data)
+```
+
+```{r}
+# Summary for fraud
+summary_fraud <- summary(train_data[train_data$fraud == "1", ])
+
+# Summary for not fraud
+summary_not_fraud <- summary(train_data[train_data$fraud == "0", ])
+
+# Print summaries
+print("Summary for Fraud:")
+print(summary_fraud)
+
+print("Summary for Not Fraud:")
+print(summary_not_fraud)
+```
+
+```{r}
+# Create a bar plot
+ggplot(train_data, aes(x = fraud, fill = fraud)) +
+  geom_bar() +
+  labs(x = "Fraud", y = "Count", title = "Number of Fraud vs. Not Fraud") +
+  scale_fill_manual(values = c("#FF9999", "#99CC99"), labels = c("Not Fraud", "Fraud")) +
+  theme_minimal()
+```
+
+```{r}
+# Set up the plotting layout
+par(mfrow = c(4, 2), mar = c(2, 2, 2, 2)) # bottom, left, top, and right margin
+
+# Plot each variable against the response variable 'fraud'
+# Continuous variables: Histogram for fraud vs not fraud
+hist(train_data$distance_from_home[train_data$fraud == "1"], main = "Distance from Home",
+     xlab = "Distance from Home", ylab = "Frequency", xlim = c(0, max(train_data$distance_from_home)),
+     col = "lightblue", border = "white", probability = TRUE)
+hist(train_data$distance_from_home[train_data$fraud == "0"], add = TRUE, col = "salmon", probability = TRUE)
+legend("topright", c("Fraud", "Not Fraud"), fill = c("lightblue", "salmon"))
+
+hist(train_data$distance_from_last_transaction[train_data$fraud == "1"], main = "Distance from Last Transaction",
+     xlab = "Distance from Last Transaction", ylab = "Frequency", xlim = c(0, max(train_data$distance_from_last_transaction)),
+     col = "lightblue", border = "white", probability = TRUE)
+hist(train_data$distance_from_last_transaction[train_data$fraud == "0"], add = TRUE, col = "salmon", probability = TRUE)
+legend("topright", c("Fraud", "Not Fraud"), fill = c("lightblue", "salmon"))
+
+hist(train_data$ratio_to_median_purchase_price[train_data$fraud == "1"], main = "Ratio to Median Purchase Price",
+     xlab = "Ratio to Median Purchase Price", ylab = "Frequency", xlim = c(0, max(train_data$ratio_to_median_purchase_price)),
+     col = "lightblue", border = "white", probability = TRUE)
+hist(train_data$ratio_to_median_purchase_price[train_data$fraud == "0"], add = TRUE, col = "salmon", probability = TRUE)
+legend("topright", c("Fraud", "Not Fraud"), fill = c("lightblue", "salmon"))
+
+# Factor variables: Barplot of count for fraud vs not fraud
+barplot(table(train_data$repeat_retailer, train_data$fraud), main = "Repeat Retailer",
+        xlab = "Repeat Retailer", ylab = "Count", beside = TRUE,
+        legend = rownames(table(train_data$repeat_retailer, train_data$fraud)), col = c("lightblue", "salmon"))
+
+barplot(table(train_data$used_chip, train_data$fraud), main = "Used Chip",
+        xlab = "Used Chip", ylab = "Count", beside = TRUE,
+        legend = rownames(table(train_data$used_chip, train_data$fraud)), col = c("lightblue", "salmon"))
+
+barplot(table(train_data$used_pin_number, train_data$fraud), main = "Used Pin Number",
+        xlab = "Used Pin Number", ylab = "Count", beside = TRUE,
+        legend = rownames(table(train_data$used_pin_number, train_data$fraud)), col = c("lightblue", "salmon"))
+
+barplot(table(train_data$online_order, train_data$fraud), main = "Online Order",
+        xlab = "Online Order", ylab = "Count", beside = TRUE,
+        legend = rownames(table(train_data$online_order, train_data$fraud)), col = c("lightblue", "salmon"))
+```
+
+# Binomial GLM
+
+```{r}
+binom_glm <- glm(fraud ~ distance_from_home+distance_from_last_transaction+ratio_to_median_purchase_price+repeat_retailer+used_chip+used_pin_number+online_order, family = binomial(link = "logit"), data = train_data)
+
+print(summary(binom_glm))
+```
+
+```{r}
+# "type 1" analysis of deviance table
+anova(binom_glm, test = "Chisq", dispersion = 1)
+```
+
+```{r}
+# "type 3" analysis of deviance table
+drop1(binom_glm, test = "Chisq", dispersion = 1)
+```
+
+```{r}
+# Predictions with standard errors
+predictions <- predict(binom_glm, newdata = test_data, se.fit = TRUE, type = "response")
+fit <- predictions$fit
+se <- predictions$se.fit
+
+# Calculate 95% confidence intervals for mu
+z <- qnorm(0.975)
+lower <- fit - z * se
+upper <- fit + z * se
+```
+
+```{r}
+# Combine the data for plotting
+plot_data <- data.frame(
+  ratio_to_median_purchase_price = test_data$ratio_to_median_purchase_price,
+  fit = fit,
+  lower = lower,
+  upper = upper,
+  fraud = test_data$fraud
+)
+
+# Plot
+ggplot(plot_data, aes(x = ratio_to_median_purchase_price, y = fit, color = fraud)) +
+  geom_point(size = 3, alpha = 1) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 1, alpha = 1) +  # Adjust width and transparency
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "black") +
+  labs(
+    x = "Ratio to Median Purchase Price",
+    y = "Predicted Fraud Probability",
+    title = "Predicted Fraud Probability with 95% Confidence Interval",
+    color = "Actual Fraud Status"
+  ) +
+  scale_color_manual(
+    values = c("green", "red"),
+    labels = c("Actually not fraud", "Actually fraud")
+  ) +
+  theme_minimal()
+```
+
+# Model Diagnostics
+
+```{r}
+# Obtain standardized quantile residuals
+quantile_residuals <- qresid(binom_glm)
+std_quantile_residuals <- quantile_residuals / sqrt(1 - hatvalues(binom_glm)) # standardized quantile residuals
+
+# Obtain fitted values
+fitted_values <- fitted(binom_glm, type = "response")
+
+# Transform fitted values to constant-information scale
+fitted_values_transformed <- asin(sqrt(fitted_values))
+
+# Plot standardized quantile residuals against transformed fitted values
+par(mfrow = c(1, 1)) # Resetting plotting layout
+scatter.smooth(fitted_values_transformed, std_quantile_residuals, 
+               xlab = "Transformed Fitted Values", ylab = "Standardized Quantile Residuals",
+               main = "Standardized Quantile Residuals vs Transformed Fitted Values")
+```
+
+**Assumptions checked:** systematic component: correct link function, usage of all the important covariates, and correct transformation of quantitative variables.
+**Patterns:** No trend.
+**The GLM assumptions checked are satisfied or violated**: Not violated.
+
+```{r}
+rW <- resid(binom_glm, type = "working") # working residuals
+lp <- predict(binom_glm) # linear predictor
+z <- rW + lp # working response
+
+# Plot working responses against linear predictors
+par(mfrow = c(1, 1)) # Resetting plotting layout
+plot(z ~ lp, las = 1, ylab = "Working responses", xlab = "Linear predictor", ylim = c(-10000, 10000), main = "Working responses vs Linear predictor")
+```
+
+**Assumptions checked:** systematic component: correct link function.
+**Patterns:** no curvature.
+**The GLM assumptions checked are satisfied or violated**: not violated. Correct link function.
+
+```{r}
+rP <- resid(binom_glm, type = "partial") # partial residuals
+# termplot(binom_glm, partial.resid = TRUE, las = 1)
+```
+
+```{r}
+scatter.smooth(rP[, 1] ~ train_data$distance_from_home, ylab = "Partial Resisual (Distance From Home)", 
+   xlab = "Distance From Home (miles)", main = "Partial Residuals vs Covariate Distance From Home", ylim = c(-5000, 5000))
+```
+
+```{r}
+scatter.smooth(rP[, 2] ~ train_data$distance_from_last_transaction, ylab = "Partial Resisual (Distance From Last Transaction)", 
+   xlab = "Distance From Last Transaction (miles)", main = "Partial Residuals vs Covariate Distance From Last Transaction", ylim = c(-5000, 5000))
+```
+
+```{r}
+scatter.smooth(rP[, 3] ~ train_data$ratio_to_median_purchase_price, ylab = "Partial Resisual (Ratio to Median Purchase)", 
+   xlab = "Ratio to Median Purchase", main = "Partial Residuals vs Covariate Ratio to Median Purchase", ylim = c(-5000, 5000))
+```
+
+**Only look at the quantitative variables (first 3 covariates)**
+**Assumptions checked:** Covariates are included on the correct/incorrect scale.
+**Patterns:** No curvature.
+**The GLM assumptions checked are satisfied or violated**: Not violated.
+
+```{r}
+# Obtain quantile residuals
+rQ <- qresid(binom_glm)
+
+# Q-Q plot of quantile residuals
+qqnorm(rQ, las = 1, main = "Q-Q plot of Quantile Residuals")
+qqline(rQ)
+```
+
+**Assumptions checked:** Check the random component. Determine if the choice of distribution is appropriate.
+**Patterns:** Does not follow a straight line.
+**The GLM assumptions checked are satisfied or violated**: Not violated. The plot shows that using a Binomial GLM is reasonable.
+
+```{r}
+# Obtain Cook's distances
+cooks_distances <- cooks.distance(binom_glm)
+
+# Plot Cook's distances
+par(mfrow = c(1, 1)) # Resetting plotting layout
+plot(cooks_distances, 
+     xlab = "Observation Number", ylab = "Cook's Distance",
+     main = "Cook's Distance")
+```
+
+```{r}
+max(cooks.distance(binom_glm)) 
+```
+
+**Assumptions checked:** check if there are any potential influential observations.
+**The GLM assumptions checked are satisfied or violated**: Not violated. All observations have the Cook’s distance less than 1, so there are no potential influential observations.

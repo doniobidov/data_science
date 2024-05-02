@@ -1,0 +1,233 @@
+---
+title: 'MA5732-GLMs Module 5 Homework #2'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+library(GLMsData)
+library(ggplot2)
+library(MASS)
+library(dplyr)
+
+# Load the dataset
+data(dwomen)
+data(teenconcerns)
+data(ccancer)
+```
+
+# Problem 5.4
+
+## Exercise 1-3
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("5_4.jpg")
+```
+
+# Problem 5.5`
+
+```{r}
+# Create the contingency table
+dwomen_table <- xtabs(Counts ~ SLE + Children + Depression, data = dwomen)
+
+# Create the dataframe
+df <- data.frame(
+  `1` = c(NA, NA, "SLE_No", "SLE_Yes"),
+  `2` = c("Depression_No", "Children_No", 0, 0),
+  `3` = c("Depression_No", "Children_Yes", 0, 0),
+  `4` = c("Depression_Yes", "Children_No", 0, 0),
+  `5` = c("Depression_Yes", "Children_Yes", 0, 0),
+  `6` = c("All_Depression", "Children_No", 0, 0),
+  `7` = c("All_Depression", "Children_Yes", 0, 0)
+)
+
+# Fill the dataframe
+df[3:4, 2:3] <- dwomen_table[,,"No"]
+df[3:4, 4:5] <- dwomen_table[,, "Yes"]
+df[3, 6] <- as.numeric(df[3, 2]) + as.numeric(df[3, 4])
+df[4, 6] <- as.numeric(df[4, 2]) + as.numeric(df[4, 4])
+df[3, 7] <- as.numeric(df[3, 3]) + as.numeric(df[3, 5])
+df[4, 7] <- as.numeric(df[4, 3]) + as.numeric(df[4, 5])
+
+# Print the dataframe
+print(df)
+```
+
+```{r}
+# Find proportions
+df_prop <- df
+
+# Iterate over rows
+for (i in 3:4) {
+  # Iterate over columns
+  for (j in 2:7) {
+    # Check if column index is even
+    if (j %% 2 == 0) {
+      # Calculate percentage
+      df_prop[i, j] <- round(100 * as.numeric(df[i, j]) / (as.numeric(df[i, j]) + as.numeric(df[i, j + 1])), 4)
+    } else {
+      # Calculate percentage
+      df_prop[i, j] <- round(100 * as.numeric(df[i, j]) / (as.numeric(df[i, j]) + as.numeric(df[i, j - 1])), 4)
+    }
+  }
+}
+
+# Print
+print(df_prop)
+```
+
+**For women that have depression, there is a strong association between having at least 3 children and experiencing a severe life event last year. This association is not as strong among women that do not have depression.**
+
+# Problem 5.6
+
+## Exercise 1
+
+```{r}
+# Create the contingency table
+teencon_table <- xtabs(Counts ~ Age + Concern + Sex, data = teenconcerns)
+
+# Print
+print(teencon_table)
+```
+
+**There are 2 zeros in the table and both of them are structural. This is because males do not have menstrual issues.**
+
+## Exercise 2
+
+```{r}
+# Remove data lines containing "Menstrual"
+teenconcerns_no_menstrual <- teenconcerns[teenconcerns$Concern != "Menstrual", ]
+```
+
+```{r}
+# mutual independent: only main effects
+tc.mutind <- glm(Counts ~ Sex + Age + Concern, family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+# Calculate AIC
+aic_mutind <- AIC(tc.mutind)
+# Calculate BIC
+bic_mutind <- BIC(tc.mutind)
+
+# partial independence: one two-factor interaction
+tc.partial1 <- glm(Counts ~ Sex + Age + Concern + Sex:Age, family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+aic_partial1 <- AIC(tc.partial1)
+bic_partial1 <- BIC(tc.partial1)
+
+tc.partial2 <- glm(Counts ~ Sex + Age + Concern + Sex:Concern, family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+aic_partial2 <- AIC(tc.partial2)
+bic_partial2 <- BIC(tc.partial2)
+
+tc.partial3 <- glm(Counts ~ Sex + Age + Concern + Age:Concern, family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+aic_partial3 <- AIC(tc.partial3)
+bic_partial3 <- BIC(tc.partial3)
+
+# conditional independence: two two-factor interaction
+tc.cond1 <- glm(Counts ~ Sex * (Age + Concern), family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+aic_cond1 <- AIC(tc.cond1)
+bic_cond1 <- BIC(tc.cond1)
+
+tc.cond2 <- glm(Counts ~ Age * (Sex + Concern), family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+aic_cond2 <- AIC(tc.cond2)
+bic_cond2 <- BIC(tc.cond2)
+
+tc.cond3 <- glm(Counts ~ Concern * (Sex + Age), family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+aic_cond3 <- AIC(tc.cond3)
+bic_cond3 <- BIC(tc.cond3)
+
+# uniform association: three two-factor interaction
+tc.uniform <- glm(Counts ~ Sex * Age * Concern - Sex : Age : Concern, family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+aic_uniform <- AIC(tc.uniform)
+bic_uniform <- BIC(tc.uniform)
+
+# Combine AIC and BIC values into a data frame
+model_results <- data.frame(Model = c("Mutual Independence", "Partial Independence Sex:Age", "Partial Independence Sex:Concern", "Partial Independence Age:Concern", "Conditional Independence Sex*(Age+Concern)", "Conditional Independence Age*(Sex+Concern)", "Conditional Independence Concern*(Sex+Age)", "Uniform Association"),
+                             AIC = c(aic_mutind, aic_partial1, aic_partial2, aic_partial3, aic_cond1, aic_cond2, aic_cond3, aic_uniform),
+                             BIC = c(bic_mutind, bic_partial1, bic_partial2, bic_partial3, bic_cond1, bic_cond2, bic_cond3, bic_uniform))
+
+# Find the best model based on AIC
+best_model_aic <- model_results[which.min(model_results$AIC), 'Model']
+
+# Find the best model based on BIC
+best_model_bic <- model_results[which.min(model_results$BIC), 'Model']
+
+# Print the results
+print("Model Results")
+print(model_results)
+print("Best Model based on AIC:")
+print(best_model_aic)
+print("Best Model based on BIC:")
+print(best_model_bic)
+```
+
+## Exercise 3
+
+```{r}
+# Fit the saturated model
+saturated_model_1 <- glm(Counts ~ Sex * Age * Concern, family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+
+# sequential "type 1" analysis of deviance table
+anova(saturated_model_1, test = "Chisq", dispersion = 1)[c("Deviance", "Df", "Pr(>Chi)")]
+```
+
+**LRT test statistic is Deviance in the table.**
+
+**Since Sex:Age:Concern and Age:Concern are not significant, Sex * (Age + Concern) is the best model.**
+
+## Exercise 4
+
+```{r}
+# Fit the saturated model
+saturated_model_2 <- glm(Counts ~ Concern * Sex * Age, family = poisson(link = 'log'), data = teenconcerns_no_menstrual)
+
+# sequential "type 1" analysis of deviance table
+anova(saturated_model_2, test = "Chisq", dispersion = 1)[c("Deviance", "Df", "Pr(>Chi)")]
+```
+
+**LRT test statistic is Deviance in the table.**
+
+**Since Concern:Sex:Age, Sex:Age, and Concern:Age are not significant, Concern + Sex + Age + Concern:Sex is the best model.**
+
+## Exercise 5
+
+**Both step 2 and step 3 determined that Sex * (Age + Concern) is the best model. However, the best model is Concern + Sex + Age + Concern:Sex according to step 4.**
+
+# Problem 5.7
+
+## Exercise 1
+
+```{r}
+# Create the contingency table
+ccancer_table <- xtabs(Count ~ Region + Site + Gender, data = ccancer)
+
+# Print
+print(ccancer_table)
+```
+
+**Females cannot have prostate cancer, so these are structural zeros. Males technically can have breast cancer, so these are sampling zeros. However, male breast cancer is so rare that we can simply treat these as structural zeros.**
+
+## Exercise 2
+
+```{r}
+# Remove data lines containing "Breast" or "Prostate"
+ccancer_no_structural_zeros <- ccancer[!(ccancer$Site %in% c("Breast", "Prostate")), ]
+
+# Fit Poisson GLM
+glm_model <- glm(Count ~ Gender + Region + Site + offset(log(Population)), 
+                 family = poisson(link = "log"), 
+                 data = ccancer_no_structural_zeros)
+
+# Interpret regression coefficients
+summary(glm_model)
+```
+
+**GenderM: For males, on average, cancer death rate (count/population) is higher by a factor of exp(0.33008)=1.391079 compared to females, when all the other exploratory variables are accounted for.**
+
+**RegionQuebec: For Quebec, on average, cancer death rate (count/population) is higher by a factor of exp(0.21095)=1.234851 compared to Newfoundland, when all the other exploratory variables are accounted for.**
+
+**SitePancreas: For pancreatic cancer, on average, death rate (count/population) is lower by a factor of exp(-0.82573)=0.4379152 compared to colorectal cancer, when all the other exploratory variables are accounted for.**

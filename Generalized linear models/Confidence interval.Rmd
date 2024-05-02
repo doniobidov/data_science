@@ -1,0 +1,458 @@
+---
+title: 'MA5732-GLMs Module 3 Homework #2'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("faraway")
+library(faraway)
+library(GLMsData)
+
+# Load the dataset
+data(salmonella)
+data(nambeware)
+data(leukwbc)
+```
+
+# Problem 3.2
+
+## Exercise 1-4
+
+```{r, out.width = "100%", fig.align = "center"}
+knitr::include_graphics("3_2_1.jpg")
+knitr::include_graphics("3_2_2.jpg")
+```
+
+# Exercise 3.3
+
+## 1
+
+```{r}
+# Fit a Poisson GLM with logarithmic link function
+salmonella_glm <- glm(colonies ~ dose, data = salmonella, family = poisson(link = "log"))
+
+# Perform a Wald test to determine if dose is necessary in the model
+wald_test <- summary(salmonella_glm)$coefficients
+
+# Extract the test statistic, p-value, and conclusion
+test_statistic <- wald_test["dose", "z value"]
+p_value <- wald_test["dose", "Pr(>|z|)"]
+conclusion <- ifelse(p_value < 0.05, "Reject null hypothesis (dose is significant)", 
+                     "Fail to reject null hypothesis (dose is not significant)")
+
+# Print the results
+cat("Test Statistic:", test_statistic, "\n")
+cat("p-value:", p_value, "\n")
+cat("Conclusion:", conclusion, "\n")
+```
+
+## 2
+
+```{r}
+# Fit the reduced model without dose variable
+reduced_model <- glm(colonies ~ 1, data = salmonella, family = poisson(link = "log"))
+
+# Perform likelihood ratio test
+lrt <- deviance(reduced_model) - deviance(salmonella_glm)
+
+# Extract the test statistic, degrees of freedom, and p-value
+df <- df.residual(reduced_model) - df.residual(salmonella_glm)
+p <- 1 - pchisq(lrt, df = df)
+
+# Conclusion
+conclusion <- ifelse(p < 0.05, "Reject null hypothesis (dose is significant)", 
+                     "Fail to reject null hypothesis (dose is not significant)")
+
+# Print the results
+cat("Test Statistic:", lrt, "\n")
+cat("Degrees of Freedom:", df, "\n")
+cat("p-value:", p, "\n")
+cat("Conclusion:", conclusion, "\n")
+```
+
+## 3
+
+**Both tests conclude that dose is not significant with pretty close p-values.**
+
+## 4
+
+```{r}
+# Get the residual deviance from the fitted model
+dev <- deviance(salmonella_glm)
+
+# Calculate the degrees of freedom
+dev.df <- df.residual(salmonella_glm)
+
+# Calculate the p-value using the chi-square distribution
+p_value <- 1 - pchisq(dev, df = dev.df)
+
+# Conclusion
+conclusion <- ifelse(p_value < 0.05, "Reject null hypothesis (Model is not sufficient)", 
+                     "Fail to reject null hypothesis (Model is sufficient)")
+
+# Print the results
+cat("Residual Deviance:", dev, "\n")
+cat("Degrees of Freedom:", dev.df, "\n")
+cat("p-value:", p_value, "\n")
+cat("Conclusion:", conclusion, "\n")
+```
+
+## 5
+
+```{r}
+# Pearson of goodness fit test
+p2 <- sum(residuals(salmonella_glm, type = "pearson")^2)
+dev.df <- df.residual(salmonella_glm)
+p_value <- 1 - pchisq(p2, df = dev.df)
+
+# Conclusion
+conclusion <- ifelse(p_value < 0.05, "Reject null hypothesis (Model is not sufficient)", 
+                     "Fail to reject null hypothesis (Model is sufficient)")
+
+# Print the results
+cat("Pearson Statistic:", p2, "\n")
+cat("Degrees of Freedom:", dev.df, "\n")
+cat("p-value:", p_value, "\n")
+cat("Conclusion:", conclusion, "\n")
+```
+
+## 6
+
+```{r}
+# Find the minimum value of the 'colonies' variable
+min_colonies <- min(salmonella$colonies)
+
+# Print the minimum value
+cat("Sorted response:", sort(salmonella$colonies), "\n")
+cat("Minimum number of revertant colonies:", min_colonies, "\n")
+```
+
+**Chi-square approximation of goodness-of-fit tests from (4) and (5) are expected to be accurate**
+
+## 7
+
+```{r}
+# Extract coefficient estimates and standard errors
+coef_est <- coef(salmonella_glm)
+std_err <- summary(salmonella_glm)$coefficients[, "Std. Error"]
+
+# Calculate z-score for 95% confidence interval
+z_score <- qnorm(0.975) # For a two-tailed test
+
+# Calculate confidence intervals
+lower_bound <- coef_est - z_score * std_err
+upper_bound <- coef_est + z_score * std_err
+
+# Combine results into a data frame
+confidence_intervals <- data.frame(
+  "Coefficient" = names(coef_est),
+  "Lower Bound" = lower_bound,
+  "Upper Bound" = upper_bound
+)
+
+# Print confidence intervals
+print(confidence_intervals)
+```
+
+## 8
+
+```{r}
+x <- c(1, 10) # values for covariate
+# calculate CI of mu
+b.cov <- summary(salmonella_glm)$cov.scaled # Inverse of Fisher information
+b.coe <- x # linear function of beta
+b.hat <- sum(b.coe * coef(salmonella_glm)) # estimate
+b.se <- as.numeric(sqrt(b.coe %*% b.cov %*% b.coe)) # standard error 
+b.low <- b.hat - qnorm(0.975) * b.se # confidence interval
+b.up <- b.hat + qnorm(0.975) * b.se # confidence interval
+results <- c(b = b.hat, se = b.se, b.low = b.low, b.up = b.up, 
+   mu = exp(b.hat), mu.low = exp(b.low), mu.up = exp(b.up))
+round(results, 5)   
+```
+
+## 9
+
+```{r}
+y <- salmonella$colonies # response
+x <- salmonella$dose # covariate
+n <- nrow(salmonella) # sample size
+b <- coef(salmonella_glm) # estimates of beta
+mu <- exp(b[1] + b[2] * x) # estimates of mu
+
+# estimate dispersion parameter   
+p2 <- sum((y - mu)^2 / mu)  # Pearson statistic
+dis <- p2 / (n - 2) # dispersion
+cat("Estimated Dispersion Parameter:", dis, "\n")
+```
+
+**Theoretical dispersion parameter for poisson family is 1, which is very different from the estimated dispersion parameter**
+
+# Exercise 3.4
+
+## 1
+
+```{r}
+# Fit a Gamma GLM with logarithmic link function
+nambeware_glm <- glm(Price ~ Diam, data = nambeware, family = Gamma(link = "log"))
+
+# Perform a Wald test to determine if diameter is significant
+wald_test <- summary(nambeware_glm)$coefficients
+
+# Extract the test statistic, p-value, and conclusion
+test_statistic <- wald_test["Diam", "t value"]
+p_value <- wald_test["Diam", "Pr(>|t|)"]
+conclusion <- ifelse(p_value < 0.05, "Reject null hypothesis (diameter is significant)", 
+                     "Fail to reject null hypothesis (diameter is not significant)")
+
+# Print the results
+cat("Test Statistic:", test_statistic, "\n")
+cat("p-value:", p_value, "\n")
+cat("Conclusion:", conclusion, "\n")
+```
+
+## 2
+
+```{r}
+# Fit the reduced model without diameter
+reduced_model <- glm(Price ~ 1, data = nambeware, family = Gamma(link = "log"))
+
+# Perform likelihood ratio test and extract the test statistic, degrees of freedom, and p-value
+test_statistic <- 2 * (logLik(nambeware_glm) - logLik(reduced_model))
+df <- summary(nambeware_glm)$df[1] - summary(reduced_model)$df[1]
+p_value <- 1 - pchisq(test_statistic, df = df)
+
+# Conclusion
+conclusion <- ifelse(p_value < 0.05, "Reject null hypothesis (diameter is significant)", 
+                     "Fail to reject null hypothesis (diameter is not significant)")
+
+# Print the results
+cat("Test Statistic:", test_statistic, "\n")
+cat("Degrees of Freedom:", df, "\n")
+cat("p-value:", p_value, "\n")
+cat("Conclusion:", conclusion, "\n")
+```
+
+## 3
+
+**Both tests conclude that diameter is not significant with pretty close p-values.**
+
+## 4
+
+```{r}
+# Calculate the Wald confidence intervals
+wald_ci <- confint(nambeware_glm, level = 0.95)
+
+# Print the confidence intervals
+print(wald_ci)
+```
+
+```{r}
+# Another approach
+# Coefficients and variance matrix 
+b.cov <- summary(nambeware_glm)$cov.scaled 
+df.res <- df.residual(nambeware_glm)
+b.coe <- c(0, 1) # linear function of beta
+b.hat <- sum(b.coe * coef(nambeware_glm)) # estimate
+b.se <- as.numeric(sqrt(b.coe %*% b.cov %*% b.coe)) # standard error 
+b.low <- b.hat - qt(0.975, df = df.res) * b.se # confidence interval
+b.up <- b.hat + qt(0.975, df = df.res) * b.se
+results <- c(b = b.hat, df = df.res, se = b.se, b.low = b.low, b.up = b.up)
+round(results, 5) 
+```
+
+## 5
+
+```{r}
+# Generate a sequence of diameters for prediction
+diam_range <- seq(min(nambeware$Diam), max(nambeware$Diam), length.out = 100)
+
+# Predict the mean and confidence intervals for each diameter in the range
+res.fit <- predict(nambeware_glm, newdata = data.frame(Diam = diam_range), se.fit = TRUE)
+
+# Extract necessary values
+b.hat <- res.fit$fit
+b.se <- res.fit$se.fit
+b.low <- b.hat - qt(0.975, df = df.res) * b.se  # Lower confidence interval
+b.up <- b.hat + qt(0.975, df = df.res) * b.se  # Upper confidence interval
+
+# Plot the data points
+plot(nambeware$Diam, nambeware$Price, xlab = "Diameter", ylab = "Price", 
+     main = "Price vs. Diameter", col = "blue", pch = 16)
+
+# Plot the fitted model line
+lines(diam_range, exp(b.hat), col = "red", lwd = 2)
+
+# Plot the 95% confidence intervals
+lines(diam_range, exp(b.low), col = "green", lty = 2)
+lines(diam_range, exp(b.up), col = "green", lty = 2)
+
+# Add legend
+legend("topright", legend = c("Data", "Fitted Model", "95% CI"),
+       col = c("blue", "red", "green"), lty = c(NA, 1, 2), pch = c(16, NA, NA), lwd = c(NA, 2, 2))
+```
+
+**The fitted model follows the observed values well. The variance of the observed points is increasing as the diameter increases. The confidence interval is also increasing as the diameter increases.**
+
+# Exercise 3.5 (bonus)
+
+## 1
+
+```{r}
+# Fit the Gamma GLM model
+leuk.glm <- glm(Time ~ I(WBC / 1000) + AG, family = Gamma(link = "log"), data = leukwbc)
+
+# Extract coefficient estimates
+beta_estimates <- coef(leuk.glm)
+
+# Point estimates of the coefficients
+beta0 <- beta_estimates[1]  # Intercept
+beta1 <- beta_estimates[2]  # Coefficient for WBC
+beta2 <- beta_estimates[3]  # Coefficient for AG
+```
+
+## 2
+
+```{r}
+# Extract standard errors of coefficient estimates
+std_errors <- summary(leuk.glm)$coef[, "Std. Error"]
+
+# Extract the estimated coefficient for WBC
+beta1_hat <- beta_estimates[2]
+
+# Calculate the Wald test statistic
+wald_statistic <- (beta1_hat - 1) / std_errors[2]
+
+# Calculate the p-value
+p_value <- 2 * (1 - pnorm(abs(wald_statistic)))
+
+# Output the results
+cat("Wald Test Statistic:", wald_statistic, "\n")
+cat("p-value:", p_value, "\n")
+
+# Conclusion
+if (p_value < 0.5) {
+  cat("Conclusion: Reject null hypothesis (β₁ ≠ 1)\n")
+} else {
+  cat("Conclusion: Fail to reject null hypothesis (β₁ = 1)\n")
+}
+```
+
+## 3
+
+```{r}
+# Get coefficient estimates and standard errors
+beta2 <- coef(leuk.glm)["AG"]
+std_error_beta2 <- summary(leuk.glm)$coefficients["AG", "Std. Error"]
+
+# Get the degrees of freedom
+df_res <- df.residual(leuk.glm)
+
+# Calculate t-score for 95% confidence interval
+t_score <- qt(0.975, df = df_res)  # For a two-tailed test
+
+# Calculate confidence intervals
+lower_bound <- beta2 - t_score * std_error_beta2
+upper_bound <- beta2 + t_score * std_error_beta2
+
+# Output the results
+cat("95% Confidence Interval for beta2:", lower_bound, "to", upper_bound, "\n")
+```
+
+## 4
+
+```{r}
+# Fit the model without WBC
+leuk.glm_no_wbc <- glm(Time ~ AG, family = Gamma(link = "log"), data = leukwbc)
+
+# Fit the model without AG
+leuk.glm_no_ag <- glm(Time ~ I(WBC / 1000), family = Gamma(link = "log"), data = leukwbc)
+
+# Calculate deviance for each model
+dev_full <- deviance(leuk.glm)
+dev_no_wbc <- deviance(leuk.glm_no_wbc)
+dev_no_ag <- deviance(leuk.glm_no_ag)
+
+# Calculate degrees of freedom for each model
+df_full <- df.residual(leuk.glm)
+df_no_wbc <- df.residual(leuk.glm_no_wbc)
+df_no_ag <- df.residual(leuk.glm_no_ag)
+
+# Calculate deviance differences
+dev_diff_wbc <- dev_no_wbc - dev_full
+dev_diff_ag <- dev_no_ag - dev_full
+
+# Calculate p-values using chi-square distribution
+p_value_wbc <- 1 - pchisq(dev_diff_wbc, df = df_no_wbc - df_full)
+p_value_ag <- 1 - pchisq(dev_diff_ag, df = df_no_ag - df_full)
+
+# Output the results
+cat("Analysis of Deviance Table (Type III):\n")
+cat("Variable     ", "Deviance Reduction", "Degrees of Freedom", "p-value", "\n")
+cat("WBC          ", dev_diff_wbc, "               ", df_no_wbc - df_full, "            ", p_value_wbc, "\n")
+cat("AG           ", dev_diff_ag, "               ", df_no_ag - df_full, "            ", p_value_ag, "\n")
+```
+
+## 5
+
+```{r}
+# Extract the first sample from the data
+first_sample <- leukwbc[1, ]
+
+# Predict the time using the full model
+pred <- predict(leuk.glm, newdata = first_sample, se.fit = TRUE)
+
+# Extract the predicted time and its standard error
+pred_time <- pred$fit
+se_pred_time <- pred$se.fit
+
+# Calculate the t-score for a 95% confidence interval
+t_score <- qt(0.975, df = df_full - length(coef(leuk.glm)))
+
+# Calculate the margin of error
+margin_error <- t_score * se_pred_time
+
+# Calculate the confidence interval
+lower_bound <- pred_time - margin_error
+upper_bound <- pred_time + margin_error
+
+# Output the results
+cat("95% Confidence Interval for Predicted Time based on WBC and AG of the first sample:\n")
+cat("Lower Bound:", lower_bound, "\n")
+cat("Upper Bound:", upper_bound, "\n")
+```
+
+## 6
+
+```{r}
+# Obtain the predicted values and residuals
+predicted <- predict(leuk.glm, type = "response")
+residuals <- resid(leuk.glm, type = "pearson")
+
+# Calculate the Pearson chi-square statistic
+pearson_chi_sq <- sum(residuals^2 / predicted)
+
+# Calculate the degrees of freedom
+df <- length(predicted) - length(coef(leuk.glm))
+
+# Calculate the p-value using the chi-square distribution
+p_value <- 1 - pchisq(pearson_chi_sq, df = df)
+
+# Output the results
+cat("Pearson Chi-Square Statistic:", pearson_chi_sq, "\n")
+cat("Degrees of Freedom:", df, "\n")
+cat("p-value:", p_value, "\n")
+
+# Conduct a significance test at the alpha = 0.05 level
+if (p_value < 0.05) {
+  cat("The model is not sufficient (reject null hypothesis).\n")
+} else {
+  cat("The model is sufficient (fail to reject null hypothesis).\n")
+}

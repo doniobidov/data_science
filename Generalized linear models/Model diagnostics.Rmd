@@ -1,0 +1,379 @@
+---
+title: 'MA5732-GLMs Homework #3'
+author: "Doni Obidov"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: journal
+    toc: yes
+---
+
+```{r}
+# Load the packages
+# install.packages("GLMsData")
+library(GLMsData)
+
+# Load the datasets
+data(humanfat)
+```
+
+# Problem 1.5
+
+## Exercise 1
+
+| Source of Variation  | df     | Sum of Squares  |
+|----------------------|--------|-----------------|
+| Cue                  | **3**  | 117793          |
+| Sex                  | **1**  | 2659            |
+| Age                  |   3    | 22850           |
+| Residual             |   60   | 177639          |
+
+Levels of sex: males and females. A binary variable has **1** parameter.
+Levels of cue: crackling noise, shuffling noise, flickering light, unpleasant smell. This variable has **3** parameters.
+
+## Exercise 2
+
+\[
+\text{df}_{\text{residual}} = n - (p + 1) = 60
+\]
+
+\[
+n = 60 + p + 1 = 60 + 7 + 1 = 68
+\]
+
+## Exercise 3
+
+```{r}
+# Given values
+rss <- 177639
+p <- 7
+n <- 68
+
+# Calculate sigma squared
+sigma_squared <- rss / (n - (p + 1))
+
+# Print the result
+cat("The unbiased estimate of sigma squared is:", sigma_squared, "\n")
+```
+
+\[
+\hat{\sigma}^2_{LS} = \frac{RSS}{n - (p + 1)} = \frac{177,639}{68 - (7 + 1)} = 2960.65
+\]
+
+## Exercise 4
+
+\[
+F_{\text{sequential}} = \frac{\frac{\text{Type I sum of squares of the variable}}{\text{degrees of freedom of the variable}}}{\frac{\text{Residual sum of squares}}{\text{degrees of freedom of residual}}}
+\]
+
+```{r}
+# Given values
+cue_df <- 3
+sex_df <- 1
+age_df <- 3
+residual_df <- 60
+rss <- 177639
+
+# Sequential F-test for Cue
+cue_ss <- 117793
+cue_f_stat <- (cue_ss / cue_df) / (rss / residual_df)
+cue_p_value <- 1 - pf(cue_f_stat, cue_df, residual_df)
+
+# Sequential F-test for Sex
+sex_ss <- 2659
+sex_f_stat <- (sex_ss / sex_df) / (rss / residual_df)
+sex_p_value <- 1 - pf(sex_f_stat, sex_df, residual_df)
+
+# Sequential F-test for Age
+age_ss <- 22850
+age_f_stat <- (age_ss / age_df) / (rss / residual_df)
+age_p_value <- 1 - pf(age_f_stat, age_df, residual_df)
+
+# Print results
+cat("Sequential F-test for Cue:\n")
+cat("F-statistic:", cue_f_stat, "\n")
+cat("Degrees of freedom:", cue_df, "and", residual_df, "\n")
+cat("P-value:", cue_p_value, "\n\n")
+
+cat("Sequential F-test for Sex:\n")
+cat("F-statistic:", sex_f_stat, "\n")
+cat("Degrees of freedom:", sex_df, "and", residual_df, "\n")
+cat("P-value:", sex_p_value, "\n\n")
+
+cat("Sequential F-test for Age:\n")
+cat("F-statistic:", age_f_stat, "\n")
+cat("Degrees of freedom:", age_df, "and", residual_df, "\n")
+cat("P-value:", age_p_value, "\n")
+```
+
+### Cue Variable
+
+The sequential F-test statistic for the Cue variable is given by:
+
+\[
+F_{\text{sequential, Cue}} = \frac{\frac{117793}{3}}{\frac{177639}{60}}
+\]
+
+The degrees of freedom for Cue are 3 and for residual are 60. Therefore,
+
+\[
+F_{\text{sequential, Cue}} \approx 13.262, \quad \text{p-value} \approx 9.54 \times 10^{-7}
+\]
+
+### Sex Variable
+
+The sequential F-test statistic for the Sex variable is given by:
+
+\[
+F_{\text{sequential, Sex}} = \frac{\frac{2659}{1}}{\frac{177639}{60}}
+\]
+
+The degrees of freedom for Sex are 1 and for residual are 60. Therefore,
+
+\[
+F_{\text{sequential, Sex}} \approx 0.898, \quad \text{p-value} \approx 0.347
+\]
+
+### Age Variable
+
+The sequential F-test statistic for the Age variable is given by:
+
+\[
+F_{\text{sequential, Age}} = \frac{\frac{22850}{3}}{\frac{177639}{60}}
+\]
+
+The degrees of freedom for Age are 3 and for residual are 60. Therefore,
+
+\[
+F_{\text{sequential, Age}} \approx 2.573, \quad \text{p-value} \approx 0.0624
+\]
+
+The p-value for any variable is found from the F-distribution (df variable, df residual):
+
+\[
+p \text{-value} = P(F_{\text{df_variable, df_residual}} \geq \text{f-statistic})
+\]
+
+Assuming a significance level of \(\alpha = 0.05\), here is an interpretation for each variable:
+
+- **Cue Variable:**
+  - P-value: \(9.54 \times 10^{-7}\) (very small)
+  - Conclusion: The Cue variable is statistically significant.
+
+- **Sex Variable:**
+  - P-value: \(0.347\) (greater than 0.05)
+  - Conclusion: The Sex variable is not statistically significant.
+
+- **Age Variable:**
+  - P-value: \(0.0624\) (greater than 0.05)
+  - Conclusion: The Age variable is not statistically significant.
+
+## Exercise 5
+
+The exclusion of participants who failed to wake during the experiment introduces a potential source of bias in the analysis. By omitting individuals who did not wake, the analysis is based only on those who successfully woke, leading to a sample that may not be representative of the entire population. This could result in an overestimation of the effectiveness of the cues in waking participants, as the data may not account for instances where certain cues were not effective in waking individuals who ultimately did not contribute to the analysis. Therefore, the interpretation of the results should be made with caution, recognizing the potential limitations in generalizing the findings to the broader population that includes those who did not wake.
+
+## Exercise 6
+
+```{r}
+# Given values
+ss_cue <- 117793
+ss_sex <- 2659
+ss_age <- 22850
+resid_ss <- 177639
+n <- 68
+total_df <- n-1
+
+# Calculate SS total
+sst <- ss_cue + ss_sex + ss_age + resid_ss
+
+# Cue-only Model
+r2_cue <- ss_cue / sst
+resid_df_cue <- n - (3 + 1)
+adj_r2_cue <- 1 - ((1 - r2_cue) * total_df / resid_df_cue)
+
+# Cue+Sex Model
+r2_cue_sex <- (ss_cue + ss_sex) / sst
+resid_df_cue_sex <- n - (4 + 1)
+adj_r2_cue_sex <- 1 - ((1 - r2_cue_sex) * total_df / resid_df_cue_sex)
+
+# Cue+Sex+Age Model
+r2_cue_sex_age <- (ss_cue + ss_sex + ss_age) / sst
+resid_df_cue_sex_age <- n - (7 + 1)
+adj_r2_cue_sex_age <- 1 - ((1 - r2_cue_sex_age) * total_df / resid_df_cue_sex_age)
+
+# Print results
+cat("Cue-only Model:\n")
+cat("R^2: ", r2_cue, "\n")
+cat("Adjusted R^2: ", adj_r2_cue, "\n\n")
+
+cat("Cue+Sex Model:\n")
+cat("R^2: ", r2_cue_sex, "\n")
+cat("Adjusted R^2: ", adj_r2_cue_sex, "\n\n")
+
+cat("Cue+Sex+Age Model:\n")
+cat("R^2: ", r2_cue_sex_age, "\n")
+cat("Adjusted R^2: ", adj_r2_cue_sex_age, "\n")
+```
+
+### Cue-only Model
+
+\[ R^2_{\text{Cue}} = \frac{SS_{\text{Cue}}}{SS_{\text{Total}}} = 0.3670\]
+
+\[ \text{Adjusted} \ R^2_{\text{Cue}} = 1 - \frac{(1 - R^2_{\text{Cue}}) \cdot \text{df}_{\text{Total}}}{\text{df}_{\text{Residual-Cue}}} = 0.3374\]
+
+### Cue+Sex Model
+
+\[ R^2_{\text{Cue+Sex}} = \frac{SS_{\text{Cue+Sex}}}{SS_{\text{Total}}} = 0.3753\]
+
+\[ \text{Adjusted} \ R^2_{\text{Cue+Sex}} = 1 - \frac{(1 - R^2_{\text{Cue+Sex}}) \cdot \text{df}_{\text{Total}}}{\text{df}_{\text{Residual-Cue+Sex}}} = 0.3356\]
+
+### Cue+Sex+Age Model
+
+\[ R^2_{\text{Cue+Sex+Age}} = \frac{SS_{\text{Cue+Sex+Age}}}{SS_{\text{Total}}} = 0.4465\]
+
+\[ \text{Adjusted} \ R^2_{\text{Cue+Sex+Age}} = 1 - \frac{(1 - R^2_{\text{Cue+Sex+Age}}) \cdot \text{df}_{\text{Total}}}{\text{df}_{\text{Residual-Cue+Sex+Age}}} = 0.3819\]
+
+## Exercise 7
+
+### Model Ranking based on R-squared
+
+1. **Cue+Sex+Age Model**
+   - \( R^2_{\text{Cue+Sex+Age}} = 0.4465 \)
+
+2. **Cue+Sex Model**
+   - \( R^2_{\text{Cue+Sex}} = 0.3753 \)
+
+3. **Cue-only Model**
+   - \( R^2_{\text{Cue}} = 0.3670 \)
+
+### Model Ranking based on Adjusted R-squared
+
+1. **Cue+Sex+Age Model**
+   - \( \text{Adjusted} \ R^2_{\text{Cue+Sex+Age}} = 0.3819 \)
+
+2. **Cue-only Model**
+   - \( \text{Adjusted} \ R^2_{\text{Cue}} = 0.3374 \)
+
+3. **Cue+Sex Model**
+   - \( \text{Adjusted} \ R^2_{\text{Cue+Sex}} = 0.3356 \)
+
+Considering both \( R^2 \) and adjusted \( R^2 \), the **Cue+Sex+Age Model** consistently ranks highest in both metrics. This model exhibits the highest \( R^2 \) and a competitive adjusted \( R^2 \), suggesting that it explains a significant portion of the variance in the data while accounting for the number of predictors.
+
+It is important to note that when deciding on the best model, the adjusted \( R^2 \) is often preferred over \( R^2 \) as it penalizes for the number of predictors, providing a more balanced evaluation.
+
+# Problem 1.6
+
+## Exercise 1
+
+```{r}
+# Fit the linear regression model
+model <- lm(Percent.Fat ~ Age * Gender, data = humanfat)
+
+# Display model summary
+summary(model)
+
+# Extract and print coefficients
+coefficients_df <- data.frame(
+  Coefficient = coef(model)[-1], # Exclude intercept
+  Standard_Error = summary(model)$coef[, "Std. Error"][-1],
+  P_Value = summary(model)$coef[, "Pr(>|t|)"][-1]
+)
+
+print(coefficients_df)
+```
+
+## Exercise 2
+
+The systematic components for females and males can be written using the estimates from the linear regression model:
+
+1. **Systematic Component for Females:**
+\[ \text{Systematic Component for Females} = 20.11 + 0.24 \times \text{Age} \]
+
+2. **Systematic Component for Males:**
+\[ \text{Systematic Component for Males} = 20.11 + 0.24 \times \text{Age} - 29.27 + 0.57 \times \text{Age} \]
+
+## Exercise 3
+
+```{r}
+# Perform t-test for the interaction term
+t_value <- summary(model)$coefficients["Age:GenderM", "t value"]
+p_value <- summary(model)$coefficients["Age:GenderM", "Pr(>|t|)"]
+df_t <- summary(model)$df[2]
+
+# Fit the linear regression model (without the interaction term)
+model_2 <- lm(Percent.Fat ~ Age + Gender, data = humanfat)
+
+# Perform F-test
+f_value <- anova(model_2, model)[2, "F"]
+p_value_f <- anova(model_2, model)[2, "Pr(>F)"]
+df1 <- anova(model_2, model)[2, "Df"]
+df2 <- anova(model_2, model)[2, "Res.Df"]
+
+# Display the results
+print("T-Test for Interaction Term:")
+print(c("t value" = t_value, "p-value" = p_value, "df" = df_t))
+
+print("F-Test for Interaction Term:")
+print(c("F value" = f_value, "p-value" = p_value_f, "df1" = df1, "df2" = df2))
+
+# Check if the p-values are the same for t-test and F-test
+print("Are p-values the same for t-test and F-test?")
+print(all.equal(p_value, p_value_f))
+
+# Calculate squared t-statistic and compare with F-statistic
+squared_t_statistic = t_value^2
+print("Squared t-statistic:")
+print(squared_t_statistic)
+
+print("F-Statstic:")
+print(f_value)
+
+# Check if the squared t-statistic is the same as the F-statistic
+print("Are squared t-statistic and F-statistic the same?")
+print(all.equal(squared_t_statistic, f_value))
+```
+
+Since the p-value is greater than 0.05, we do not have enough evidence to reject the null hypothesis. Therefore, based on this analysis, the interaction term is not considered statistically significant at the 0.05 significance level.
+
+# Problem 1.7
+
+## Exercise 1
+
+```{r}
+# Plot 1: Scatter plot of Age against standardized residuals
+# Check linearity of a regressor
+plot(humanfat$Age, resid(model, type = "pearson"), 
+     xlab = "Age (Years)",
+     ylab = "Standardized Residuals",
+     main = "Scatter Plot of Age vs. Standardized Residuals")
+
+# Plot 2: Residuals vs. Fitted Values (Predicted Values)
+# Check linearity and constant variance
+plot(model, which = 1)
+
+# Plot 3: Normal QQ Plot
+# Asses normality
+qqnorm(resid(model))
+qqline(resid(model))
+
+# Plot 4: Lag plot for the residuals
+# Asses dependence over time
+lag.plot(residuals(model), main = "Lag Plot of Residuals")
+```
+
+1. **Linearity for age: Plot of Age against standardized residuals**
+   - The residuals show no pattern, and have a constant variability around zero for all values of Age. So linearity is fine.
+
+2. **Constant variance: Plot of standardized residuals against the predicted values**
+   - The residuals are randomly scattered around zero (no nonliner pattern. However, the variances of residuals are increasing for higher body fat percentage. So the constant variance assumption might be violated.
+
+3. **Normality: Q-Q plot**
+   - The distribution of residuals appears to have heavier tails than the normal distribution at the right tail, because the residuals curve above the line on the right. So the normality assumption may be violated.
+   
+4. **Outliers and influential observations: Plot of standardized residuals against the predicted values**
+   - Many observations have $$|{r_i}'| \geq 3$$. All of these outliers need to be investigated.
+   
+5. **Dependence over time: Lag plot**
+   - The responses are independent, as the lag plot shows no pattern.
