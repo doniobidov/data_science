@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gold Collection Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      margin: auto; /* Center the canvas within the viewport */
+    }
+
+    #scoreboard {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      font-size: 18px;
+      color: white;
+    }
+
+    #timer {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 18px;
+      color: white;
+    }
+
+    #gameOver {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 36px;
+      color: white;
+      display: none;
+    }
+
+    #restartButton {
+      position: absolute;
+      top: 60%;
+      left: 50%;
+      transform: translate(-50%, 0);
+      padding: 10px 20px;
+      font-size: 18px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <div id="scoreboard"></div>
+  <div id="timer">Time: 0</div>
+  <div id="gameOver">Game Over!</div>
+  <button id="restartButton" onclick="restartGame()">Restart</button>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const basketImage = new Image();
+    basketImage.src = 'https://pages.mtu.edu/~cai/cyberhusky/goldgame/rocket.png';
+
+    const goldImage = new Image();
+    goldImage.src = 'https://pages.mtu.edu/~cai/cyberhusky/goldgame/rock.png';
+
+    const bombImage = new Image();
+    bombImage.src = 'https://i.imgur.com/Eu1IEWk.png';
+
+    const giftImage = new Image();
+    giftImage.src = 'https://i.imgur.com/QhMni2B.png';
+
+    const starImage = new Image();
+    starImage.src = 'https://i.imgur.com/F5RSWnl.png';
+
+    const hitSound = new Audio('https://pages.mtu.edu/~cai/cyberhusky/goldgame/hit.mp3');
+
+    const basket = {
+      x: canvas.width / 2 - 25,
+      y: canvas.height - 50,
+      width: 50,
+      height: 50,
+      speed: 5,
+    };
+
+    const golds = [];
+    const bombs = [];
+    const gifts = [];
+    const stars = [];
+    let score = 0;
+    let timer = 0;
+    let gameOver = false;
+    let freezeGoldBombs = false;
+    let freezeTimer = 0;
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw background
+      const backgroundImage = new Image();
+      backgroundImage.src = 'https://pages.mtu.edu/~cai/cyberhusky/goldgame/sky.jpg';
+      ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+
+      // Draw gold
+      for (const gold of golds) {
+        ctx.drawImage(goldImage, gold.x, gold.y, gold.size, gold.size);
+      }
+
+      // Draw bombs
+      for (const bomb of bombs) {
+        ctx.drawImage(bombImage, bomb.x, bomb.y, bomb.size, bomb.size);
+      }
+
+      // Draw gifts
+      for (const gift of gifts) {
+        ctx.drawImage(giftImage, gift.x, gift.y, gift.size, gift.size);
+      }
+
+      // Draw basket
+      ctx.drawImage(basketImage, basket.x, basket.y, basket.width, basket.height);
+
+      // Draw stars for gold collection effect
+      for (const star of stars) {
+        ctx.drawImage(starImage, star.x, star.y, star.size, star.size);
+      }
+
+      // Draw score and timer
+      ctx.fillStyle = 'white';
+      ctx.font = '18px Arial';
+      ctx.fillText(`Score: ${score}`, 10, 20);
+      ctx.fillText(`Time: ${Math.floor(timer / 60)}`, canvas.width - 80, 20);
+
+      // Draw game over message and restart button if the game is over
+      if (gameOver) {
+        document.getElementById('gameOver').style.display = 'block';
+        document.getElementById('restartButton').style.display = 'block';
+      }
+    }
+
+    function update() {
+      if (gameOver) {
+        return; // Stop the game loop if it's already over
+      }
+
+      // Check if the freeze effect is active
+      if (freezeTimer > 0) {
+        freezeTimer--;
+
+        // Draw the updated state during the freeze
+        draw();
+
+        // Repeat the update function after a short delay
+        setTimeout(update, 1000 / 60);
+        return;
+      }
+
+      // Update basket position
+      if (keys['ArrowLeft'] && basket.x > 0) {
+        basket.x -= basket.speed;
+      }
+
+      if (keys['ArrowRight'] && basket.x < canvas.width - basket.width) {
+        basket.x += basket.speed;
+      }
+
+      if (keys['ArrowDown'] && basket.y < canvas.height - basket.height) {
+        basket.y += basket.speed;
+      }
+
+      if (keys['ArrowUp'] && basket.y > 0) {
+        basket.y -= basket.speed;
+      }
+
+      // Update gold position
+      for (let i = golds.length - 1; i >= 0; i--) {
+        const gold = golds[i];
+        if (!freezeGoldBombs) {
+          gold.y += 3; // Adjust the speed of falling gold
+        }
+
+        // Check for collision with basket
+        if (
+          gold.x < basket.x + basket.width &&
+          gold.x + gold.size > basket.x &&
+          gold.y < basket.y + basket.height &&
+          gold.y + gold.size > basket.y
+        ) {
+          golds.splice(i, 1);
+          score += getGoldScore(gold.size);
+          hitSound.play();
+          showGoldEffect(basket.x + basket.width / 2, basket.y + basket.height / 2);
+        }
+
+        // Remove gold when it goes below the canvas
+        if (gold.y > canvas.height) {
+          golds.splice(i, 1);
+        }
+      }
+
+      // Update bomb position
+      for (let i = bombs.length - 1; i >= 0; i--) {
+        const bomb = bombs[i];
+        if (!freezeGoldBombs) {
+          bomb.y += 3; // Adjust the speed of falling bombs
+        }
+
+        // Check for collision with basket
+        if (
+          bomb.x < basket.x + basket.width &&
+          bomb.x + bomb.size > basket.x &&
+          bomb.y < basket.y + basket.height &&
+          bomb.y + bomb.size > basket.y
+        ) {
+          bombs.splice(i, 1);
+          score--; // Deduct points for catching a bomb
+          hitSound.play();
+
+          if (score < 0) {
+            gameOver = true;
+          }
+        }
+
+        // Remove bomb when it goes below the canvas
+        if (bomb.y > canvas.height) {
+          bombs.splice(i, 1);
+        }
+      }
+
+      // Update gift position
+      for (let i = gifts.length - 1; i >= 0; i--) {
+        const gift = gifts[i];
+        gift.y += 3; // Adjust the speed of falling gifts
+
+        // Check for collision with basket
+        if (
+          gift.x < basket.x + basket.width &&
+          gift.x + gift.size > basket.x &&
+          gift.y < basket.y + basket.height &&
+          gift.y + gift.size > basket.y
+        ) {
+          gifts.splice(i, 1);
+          freezeGoldBombs = true;
+          setTimeout(() => {
+            freezeGoldBombs = false;
+          }, 5000); // 5 seconds freeze (5000 milliseconds)
+          hitSound.play();
+        }
+
+        // Remove gift when it goes below the canvas
+        if (gift.y > canvas.height) {
+          gifts.splice(i, 1);
+        }
+      }
+
+      // Generate new gold randomly
+      if (Math.random() < 0.02) {
+        const size = Math.floor(Math.random() * 30) + 20; // Random size between 20 and 50
+        const x = Math.random() * (canvas.width - size);
+        golds.push({ x, y: 0, size });
+      }
+
+      // Generate new bombs randomly
+      if (Math.random() < 0.01) {
+        const size = 60; // Twice as big bombs
+        const x = Math.random() * (canvas.width - size);
+        bombs.push({ x, y: 0, size });
+      }
+
+      // Generate new gifts every 20 seconds
+      if (timer % (20 * 60) === 0) {
+        const size = 80; // Gift size (twice as big)
+        const x = Math.random() * (canvas.width - size);
+        gifts.push({ x, y: 0, size });
+      }
+
+      // Update stars for gold collection effect
+      for (let i = stars.length - 1; i >= 0; i--) {
+        const star = stars[i];
+        star.size *= 0.95; // Reduce the size gradually
+        if (star.size < 5) {
+          stars.splice(i, 1);
+        }
+      }
+
+      // Update timer
+      timer++;
+
+      // Check if the game should end (e.g., after a certain time)
+      // Add your own game over conditions as needed
+
+      // Draw the updated state
+      draw();
+
+      // Repeat the update function
+      requestAnimationFrame(update);
+    }
+
+    function getGoldScore(size) {
+      // Assign points based on the size of the gold
+      if (size < 30) {
+        return 1; // Small gold
+      } else if (size < 40) {
+        return 2; // Medium gold
+      } else {
+        return 3; // Large gold
+      }
+    }
+
+    function restartGame() {
+      score = 0;
+      timer = 0;
+      gameOver = false;
+      golds.length = 0;
+      bombs.length = 0;
+      gifts.length = 0;
+      stars.length = 0;
+      freezeGoldBombs = false;
+      freezeTimer = 0;
+      document.getElementById('gameOver').style.display = 'none';
+      document.getElementById('restartButton').style.display = 'none';
+      update();
+    }
+
+    function showGoldEffect(x, y) {
+      // Display the gold collection effect with smaller stars around the basket
+      for (let i = 0; i < 10; i++) {
+        stars.push({ x, y, size: 30 });
+      }
+    }
+
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+
+    update(); // Start the game loop
+  </script>
+</body>
+</html>
